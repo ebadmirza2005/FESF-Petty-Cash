@@ -1,0 +1,39 @@
+name: project
+description: "A new Flutter project."
+ 
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.1.0
+  shared_preferences: ^2.2.2
+  math_expressions: ^3.1.0
+  intl: ^0.20.2
+  image_picker: ^1.2.0
+  connectivity_plus: ^6.1.4
+
+
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/images.jpeg"
+  
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+
