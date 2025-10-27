@@ -1,12 +1,12 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:project/Screen/bill_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 
 class AddBill extends StatefulWidget {
   final File? imageFile;
@@ -27,16 +27,18 @@ class _AddBillState extends State<AddBill> {
   final _formKey = GlobalKey<FormState>();
   final _narrController = TextEditingController();
   final _amountController = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
+
   int? _expenseHeadId;
   bool _isLoading = false;
+  bool _loadingExpenseHeads = false;
+  int _billCount = 0;
+
   List<Map<String, dynamic>> _expenseHeads = [];
   List<Map<String, dynamic>> _submitBills = [];
-  bool _loadingExpenseHeads = false;
-  DateTime _selectedDate = DateTime.now();
 
   File? image;
-  final ImagePicker _picker = ImagePicker();
-  int _billCount = 0;
+  DateTime _selectedDate = DateTime.now();
 
   @override
   void initState() {
@@ -72,7 +74,7 @@ class _AddBillState extends State<AddBill> {
         if (decoded is List) {
           _expenseHeads = List<Map<String, dynamic>>.from(decoded);
           _expenseHeadId = _expenseHeads.isNotEmpty
-              ? _expenseHeads[0]['id'] as int?
+              ? _expenseHeads.first['id']
               : null;
         }
       } catch (_) {
@@ -104,6 +106,7 @@ class _AddBillState extends State<AddBill> {
 
   Future<void> fetchExpenseHeads() async {
     setState(() => _loadingExpenseHeads = true);
+
     final url = Uri.parse(
       "https://stage-cash.fesf-it.com/api/get-expense-heads",
     );
@@ -119,13 +122,13 @@ class _AddBillState extends State<AddBill> {
       setState(() {
         _expenseHeads = [];
         _expenseHeadId = null;
-        _loadingExpenseHeads = false;
+        _loadingExpenseHeads = true;
       });
       return;
     }
 
     try {
-      final resp = await http.get(
+      final response = await http.get(
         url,
         headers: {
           'Content-Type': 'application/json',
@@ -133,109 +136,82 @@ class _AddBillState extends State<AddBill> {
         },
       );
 
-      if (resp.statusCode == 200 && resp.body.isNotEmpty) {
-        final decoded = jsonDecode(resp.body);
-        List<dynamic> listData = [];
+      if (response.statusCode == 200 && response.body.isNotEmpty) {
+        final decoded = jsonDecode(response.body);
 
-        if (decoded is Map && decoded.containsKey('data')) {
-          listData = decoded['data'];
-        } else if (decoded is List) {
-          listData = decoded;
-        } else {
-          throw Exception('Unexpected response format');
-        }
+        // ✅ Directly use the list as-is from API (no filtering/sorting)
+        final List<dynamic> listData =
+            decoded is Map && decoded.containsKey('data')
+            ? decoded['data']
+            : (decoded is List ? decoded : []);
 
-        _expenseHeads = listData
-            .where(
-              (item) =>
-                  item is Map &&
-                  item.containsKey('id') &&
-                  item.containsKey('name') &&
-                  item['id'] != null &&
-                  item['name'] != null,
-            )
-            .map<Map<String, dynamic>>(
-              (item) => {
-                'id': item['id'],
-                'name': item['name'],
-                'code': item['code'],
-              },
-            )
-            .toList();
+        _expenseHeads = List<Map<String, dynamic>>.from(listData);
 
+        // ✅ Set first ID as default (optional)
         _expenseHeadId = _expenseHeads.isNotEmpty
-            ? _expenseHeads[0]['id'] as int?
+            ? _expenseHeads.first['id']
             : null;
 
+        // ✅ Save exactly as API returned (for caching)
         await prefs.setString('expense_heads', jsonEncode(_expenseHeads));
       } else {
-        throw Exception('Server: ${resp.statusCode}');
+        throw Exception(
+          'Failed to load expense heads (code: ${response.statusCode})',
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Expense head load error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading expense heads: $e')),
+        );
       }
     } finally {
-      setState(() => _loadingExpenseHeads = false);
+      if (mounted) setState(() => _loadingExpenseHeads = false);
     }
   }
 
   void _showPicker() {
     showModalBottomSheet(
       context: context,
-      builder: (BuildContext bc) {
-        return Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera, color: Colors.blue),
-              title: const Text(
-                "Camera",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              onTap: () {
-                _pickImage(ImageSource.camera);
-                Navigator.of(context).pop();
-              },
+      builder: (BuildContext bc) => Wrap(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.photo_camera, color: Colors.blue),
+            title: const Text(
+              "Camera",
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            ListTile(
-              leading: const Icon(Icons.photo_library, color: Colors.pink),
-              title: const Text(
-                "Gallery",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              onTap: () {
-                _pickImage(ImageSource.gallery);
-                Navigator.of(context).pop();
-              },
+            onTap: () {
+              _pickImage(ImageSource.camera);
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library, color: Colors.pink),
+            title: const Text(
+              "Gallery",
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
-          ],
-        );
-      },
+            onTap: () {
+              _pickImage(ImageSource.gallery);
+              Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
     );
   }
 
   Future<void> _selectDate(BuildContext context) async {
     final now = DateTime.now();
-
-    // Ye ab pichlay maheenay ke first day ko allow karega
     final prevMonth = now.month == 1 ? 12 : now.month - 1;
     final prevYear = now.month == 1 ? now.year - 1 : now.year;
-
-    // Pichlay maheenay ka pehla din
     final firstAllowedDate = DateTime(prevYear, prevMonth, 1);
-
-    // Aaj tak ki date allowed
     final lastAllowedDate = now;
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate.isAfter(lastAllowedDate)
-          ? lastAllowedDate
-          : _selectedDate.isBefore(firstAllowedDate)
-          ? firstAllowedDate
-          : _selectedDate,
+      initialDate: _selectedDate,
       firstDate: firstAllowedDate,
       lastDate: lastAllowedDate,
       builder: (ctx, child) => Theme(
@@ -251,41 +227,40 @@ class _AddBillState extends State<AddBill> {
   Future<void> _pickImage(ImageSource source) async {
     final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile != null) {
-      setState(() {
-        image = File(pickedFile.path);
-      });
+      setState(() => image = File(pickedFile.path));
     }
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
 
     if (image == null && widget.imageFile == null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Please select an image")));
-      setState(() => _isLoading = false);
       return;
     }
 
-    final selectExpense = _expenseHeads.firstWhere(
+    setState(() => _isLoading = true);
+
+    final selectedExpense = _expenseHeads.firstWhere(
       (h) => h['id'] == _expenseHeadId,
       orElse: () => {'name': 'Unknown'},
     );
 
     final newBill = {
       'narration': _narrController.text,
-      'expenseHead': selectExpense['name'],
-      'amount': 'PKR ${_amountController.text}',
-      'date': DateFormat('d/M/Y').format(_selectedDate),
+      'expenseHead': selectedExpense['name'],
+      'amount': '${_amountController.text}/=',
+      'date': DateFormat('dd/MM/yyyy').format(_selectedDate),
       'image': image ?? widget.imageFile,
     };
 
     _submitBills.add(newBill);
     _billCount++;
 
-    // Navigate to BillScreen
+    if (!mounted) return;
+
     await Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
@@ -296,60 +271,17 @@ class _AddBillState extends State<AddBill> {
           billData: newBill,
         ),
       ),
-      (Route<dynamic> route) => false,
+      (route) => false,
     );
 
-    // 👇 yahan image clear kar rahe hain
     setState(() {
       image = null;
+      _isLoading = false;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Bill $_billCount added successfully!")),
     );
-
-    setState(() => _isLoading = false);
-
-    if (_billCount >= 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("You have added 10 bills successfully ✅")),
-      );
-      Navigator.pop(context);
-      return;
-    }
-
-    final addAnother = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Bill Added"),
-        content: Text(
-          "You have added $_billCount bills.\nDo you want to add another one?",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("No"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Yes"),
-          ),
-        ],
-      ),
-    );
-
-    if (addAnother == true) {
-      _formKey.currentState!.reset();
-      _narrController.clear();
-      _amountController.clear();
-      setState(() {
-        image = null;
-        _expenseHeadId = null;
-        _selectedDate = DateTime.now();
-      });
-    } else {
-      Navigator.pop(context);
-    }
   }
 
   @override
@@ -360,7 +292,7 @@ class _AddBillState extends State<AddBill> {
         foregroundColor: Colors.white,
         title: const Text(
           "Bill Info",
-          style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
       ),
       body: Padding(
@@ -369,7 +301,6 @@ class _AddBillState extends State<AddBill> {
           key: _formKey,
           child: ListView(
             children: [
-              // Narration
               TextFormField(
                 controller: _narrController,
                 decoration: InputDecoration(
@@ -380,17 +311,15 @@ class _AddBillState extends State<AddBill> {
                   ),
                 ),
                 validator: (v) =>
-                    (v == null || v.isEmpty) ? "Please Enter Narration" : null,
+                    (v == null || v.isEmpty) ? "Please enter narration" : null,
               ),
-              const SizedBox(height: 23),
+              const SizedBox(height: 20),
 
-              // Expense Head Dropdown
               _loadingExpenseHeads
                   ? const Center(
                       child: CircularProgressIndicator(color: Colors.black),
                     )
                   : DropdownButtonFormField<int>(
-                      key: ValueKey(_expenseHeads.length),
                       decoration: InputDecoration(
                         labelText: 'Expense Head',
                         prefixIcon: const Icon(
@@ -401,48 +330,26 @@ class _AddBillState extends State<AddBill> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      icon: const SizedBox.shrink(), // right icon hataya gaya
-                      hint: const Text(
-                        'Select Expense Head',
-                        style: TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-
-                      value:
-                          (_expenseHeads.isNotEmpty &&
-                              _expenseHeads.any(
-                                (h) => h['id'] == _expenseHeadId,
-                              ))
-                          ? _expenseHeadId
-                          : null,
-
+                      value: _expenseHeadId,
                       items: _expenseHeads.map((h) {
                         return DropdownMenuItem<int>(
-                          value: h['id'] as int,
+                          value: h['id'],
                           child: Text(
-                            h['name']?.toString() ??
-                                '-', // API key yahan match karna
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black,
-                            ),
-                          ),
+                            h['name'].toString(),
+                          ), // API jaisa hi name
                         );
                       }).toList(),
-
-                      onChanged: (v) => setState(() => _expenseHeadId = v),
-                      validator: (v) {
-                        if (v == null ||
-                            !_expenseHeads.any((h) => h['id'] == v)) {
-                          return 'Please select expense head';
-                        }
-                        return null;
+                      onChanged: (v) {
+                        setState(() {
+                          _expenseHeadId = v;
+                        });
                       },
-                      style: const TextStyle(fontSize: 13),
+                      validator: (v) =>
+                          v == null ? 'Please select expense head' : null,
                     ),
 
-              const SizedBox(height: 25),
+              const SizedBox(height: 20),
 
-              // Amount Field
               Card(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -513,81 +420,53 @@ class _AddBillState extends State<AddBill> {
                 ),
               ),
 
-              const SizedBox(height: 15),
+              const SizedBox(height: 20),
 
-              // Date Picker
               ListTile(
-                shape: BeveledRectangleBorder(
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(5),
                   side: const BorderSide(color: Colors.deepPurple, width: 0.6),
                 ),
                 title: Text(
-                  'Date: ${DateFormat('dd/MM/yy').format(_selectedDate)}',
+                  'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
                 ),
                 trailing: const Icon(Icons.calendar_today, color: Colors.blue),
                 onTap: () => _selectDate(context),
               ),
 
-              const SizedBox(height: 30),
+              const SizedBox(height: 25),
 
-              // Image Picker
-              Container(
-                width: 90,
-                height: 150,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.5),
-                      offset: const Offset(4, 4),
-                      blurRadius: 8,
-                      spreadRadius: 2,
-                    ),
-                  ],
+              GestureDetector(
+                onTap: _showPicker,
+                child: Container(
+                  height: 150,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade400),
+                  ),
+                  child: (image ?? widget.imageFile) != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(
+                            image ?? widget.imageFile!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                          ),
+                        )
+                      : const Center(
+                          child: Text(
+                            "Tap to select image",
+                            style: TextStyle(color: Colors.grey, fontSize: 16),
+                          ),
+                        ),
                 ),
-                child: (image ?? widget.imageFile) != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.file(
-                          image ?? widget.imageFile!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: 200,
-                        ),
-                      )
-                    : Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
-                              "Drag & Drop your files or",
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: _showPicker,
-                              child: const Text(
-                                "Browse",
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
               ),
 
               const SizedBox(height: 30),
 
-              // Submit Button
               SizedBox(
-                width: MediaQuery.of(context).size.width,
+                width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _submit,
@@ -598,10 +477,15 @@ class _AddBillState extends State<AddBill> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
-                    "Submit",
-                    style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
-                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                          "Submit",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ],

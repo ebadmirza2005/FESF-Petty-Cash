@@ -59,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ..setString('location_name', user['location']['name']);
 
         if (!mounted) return;
-        Navigator.pushReplacement(
+        await Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
             builder: (_) => BillScreen(
@@ -67,6 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
               locationCode: user['location']['code'],
             ),
           ),
+          (route) => false,
         );
       } else {
         _showSnack(body['message'] ?? "Login failed");
