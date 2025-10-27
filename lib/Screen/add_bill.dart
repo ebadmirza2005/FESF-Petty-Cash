@@ -1,13 +1,23 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:project/Screen/bill_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
 class AddBill extends StatefulWidget {
-  const AddBill({super.key});
+  final File? imageFile;
+  final String name, locationCode;
+
+  const AddBill({
+    super.key,
+    required this.name,
+    required this.locationCode,
+    this.imageFile,
+  });
 
   @override
   State<AddBill> createState() => _AddBillState();
@@ -16,12 +26,17 @@ class AddBill extends StatefulWidget {
 class _AddBillState extends State<AddBill> {
   final _formKey = GlobalKey<FormState>();
   final _narrController = TextEditingController();
+  final _amountController = TextEditingController();
   int? _expenseHeadId;
+  bool _isLoading = false;
   List<Map<String, dynamic>> _expenseHeads = [];
+  List<Map<String, dynamic>> _submitBills = [];
   bool _loadingExpenseHeads = false;
+  DateTime _selectedDate = DateTime.now();
 
   File? image;
   final ImagePicker _picker = ImagePicker();
+  int _billCount = 0;
 
   @override
   void initState() {
@@ -32,7 +47,8 @@ class _AddBillState extends State<AddBill> {
   @override
   void dispose() {
     _narrController.dispose();
-    super.dispose;
+    _amountController.dispose();
+    super.dispose();
   }
 
   Future<bool> _hasInternetConnection() async {
@@ -173,8 +189,8 @@ class _AddBillState extends State<AddBill> {
         return Wrap(
           children: [
             ListTile(
-              leading: Icon(Icons.photo_camera, color: Colors.blue),
-              title: Text(
+              leading: const Icon(Icons.photo_camera, color: Colors.blue),
+              title: const Text(
                 "Camera",
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
@@ -184,8 +200,8 @@ class _AddBillState extends State<AddBill> {
               },
             ),
             ListTile(
-              leading: Icon(Icons.photo_library, color: Colors.pink),
-              title: Text(
+              leading: const Icon(Icons.photo_library, color: Colors.pink),
+              title: const Text(
                 "Gallery",
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
@@ -200,12 +216,139 @@ class _AddBillState extends State<AddBill> {
     );
   }
 
+  Future<void> _selectDate(BuildContext context) async {
+    final now = DateTime.now();
+
+    // Ye ab pichlay maheenay ke first day ko allow karega
+    final prevMonth = now.month == 1 ? 12 : now.month - 1;
+    final prevYear = now.month == 1 ? now.year - 1 : now.year;
+
+    // Pichlay maheenay ka pehla din
+    final firstAllowedDate = DateTime(prevYear, prevMonth, 1);
+
+    // Aaj tak ki date allowed
+    final lastAllowedDate = now;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isAfter(lastAllowedDate)
+          ? lastAllowedDate
+          : _selectedDate.isBefore(firstAllowedDate)
+          ? firstAllowedDate
+          : _selectedDate,
+      firstDate: firstAllowedDate,
+      lastDate: lastAllowedDate,
+      builder: (ctx, child) => Theme(
+        data: ThemeData.light().copyWith(
+          colorScheme: const ColorScheme.light(primary: Colors.deepPurple),
+        ),
+        child: child ?? const SizedBox.shrink(),
+      ),
+    );
+    if (picked != null) setState(() => _selectedDate = picked);
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile != null) {
       setState(() {
         image = File(pickedFile.path);
       });
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
+
+    if (image == null && widget.imageFile == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please select an image")));
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    final selectExpense = _expenseHeads.firstWhere(
+      (h) => h['id'] == _expenseHeadId,
+      orElse: () => {'name': 'Unknown'},
+    );
+
+    final newBill = {
+      'narration': _narrController.text,
+      'expenseHead': selectExpense['name'],
+      'amount': 'PKR ${_amountController.text}',
+      'date': DateFormat('d/M/Y').format(_selectedDate),
+      'image': image ?? widget.imageFile,
+    };
+
+    _submitBills.add(newBill);
+    _billCount++;
+
+    // Navigate to BillScreen
+    await Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BillScreen(
+          name: widget.name,
+          locationCode: widget.locationCode,
+          imageFile: image ?? widget.imageFile,
+          billData: newBill,
+        ),
+      ),
+      (Route<dynamic> route) => false,
+    );
+
+    // 👇 yahan image clear kar rahe hain
+    setState(() {
+      image = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Bill $_billCount added successfully!")),
+    );
+
+    setState(() => _isLoading = false);
+
+    if (_billCount >= 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("You have added 10 bills successfully ✅")),
+      );
+      Navigator.pop(context);
+      return;
+    }
+
+    final addAnother = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Bill Added"),
+        content: Text(
+          "You have added $_billCount bills.\nDo you want to add another one?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("No"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Yes"),
+          ),
+        ],
+      ),
+    );
+
+    if (addAnother == true) {
+      _formKey.currentState!.reset();
+      _narrController.clear();
+      _amountController.clear();
+      setState(() {
+        image = null;
+        _expenseHeadId = null;
+        _selectedDate = DateTime.now();
+      });
+    } else {
+      Navigator.pop(context);
     }
   }
 
@@ -252,14 +395,18 @@ class _AddBillState extends State<AddBill> {
                         labelText: 'Expense Head',
                         prefixIcon: const Icon(
                           Icons.arrow_drop_down,
-                          color: Colors.deepPurple,
+                          color: Colors.blue,
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      icon:
-                          const SizedBox.shrink(), // 🔹 hides the default dropdown arrow
+                      icon: const SizedBox.shrink(), // right icon hataya gaya
+                      hint: const Text(
+                        'Select Expense Head',
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+
                       value:
                           (_expenseHeads.isNotEmpty &&
                               _expenseHeads.any(
@@ -267,11 +414,13 @@ class _AddBillState extends State<AddBill> {
                               ))
                           ? _expenseHeadId
                           : null,
+
                       items: _expenseHeads.map((h) {
                         return DropdownMenuItem<int>(
                           value: h['id'] as int,
                           child: Text(
-                            h['name']?.toString() ?? '-',
+                            h['name']?.toString() ??
+                                '-', // API key yahan match karna
                             style: const TextStyle(
                               fontSize: 12,
                               color: Colors.black,
@@ -279,6 +428,7 @@ class _AddBillState extends State<AddBill> {
                           ),
                         );
                       }).toList(),
+
                       onChanged: (v) => setState(() => _expenseHeadId = v),
                       validator: (v) {
                         if (v == null ||
@@ -323,7 +473,7 @@ class _AddBillState extends State<AddBill> {
                         child: const Text(
                           'PKR',
                           style: TextStyle(
-                            color: Colors.deepPurple,
+                            color: Colors.blue,
                             fontWeight: FontWeight.bold,
                             fontSize: 17,
                             letterSpacing: 0.5,
@@ -333,10 +483,12 @@ class _AddBillState extends State<AddBill> {
                       const SizedBox(width: 13),
                       Expanded(
                         child: TextFormField(
+                          controller: _amountController,
                           decoration: InputDecoration(
                             labelText: 'Amount',
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
                               vertical: 16,
@@ -347,13 +499,11 @@ class _AddBillState extends State<AddBill> {
                             decimal: true,
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty) {
+                            if (v == null || v.isEmpty)
                               return 'Please enter amount';
-                            }
                             final n = num.tryParse(v);
-                            if (n == null || n <= 0) {
+                            if (n == null || n <= 0)
                               return 'Enter valid amount';
-                            }
                             return null;
                           },
                         ),
@@ -362,25 +512,98 @@ class _AddBillState extends State<AddBill> {
                   ),
                 ),
               ),
-              SizedBox(height: 50),
+
+              const SizedBox(height: 15),
+
+              // Date Picker
+              ListTile(
+                shape: BeveledRectangleBorder(
+                  borderRadius: BorderRadius.circular(5),
+                  side: const BorderSide(color: Colors.deepPurple, width: 0.6),
+                ),
+                title: Text(
+                  'Date: ${DateFormat('dd/MM/yy').format(_selectedDate)}',
+                ),
+                trailing: const Icon(Icons.calendar_today, color: Colors.blue),
+                onTap: () => _selectDate(context),
+              ),
+
+              const SizedBox(height: 30),
+
+              // Image Picker
+              Container(
+                width: 90,
+                height: 150,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.5),
+                      offset: const Offset(4, 4),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: (image ?? widget.imageFile) != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.file(
+                          image ?? widget.imageFile!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: 200,
+                        ),
+                      )
+                    : Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              "Drag & Drop your files or",
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _showPicker,
+                              child: const Text(
+                                "Browse",
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+
+              const SizedBox(height: 30),
+
+              // Submit Button
               SizedBox(
+                width: MediaQuery.of(context).size.width,
                 height: 50,
                 child: ElevatedButton(
+                  onPressed: _isLoading ? null : _submit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  onPressed: _showPicker,
-                  child: Text(
-                    "Upload Image",
+                  child: const Text(
+                    "Submit",
                     style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
-              
             ],
           ),
         ),
