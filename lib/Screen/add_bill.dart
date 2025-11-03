@@ -32,18 +32,14 @@ class _AddBillState extends State<AddBill> {
   int? _expenseHeadId;
   bool _isLoading = false;
   bool _loadingExpenseHeads = false;
-  int _billCount = 0;
-
   List<Map<String, dynamic>> _expenseHeads = [];
-  List<Map<String, dynamic>> _submitBills = [];
-
-  File? image;
+  File? _image;
   DateTime _selectedDate = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    loadExpenseHeads();
+    _loadExpenseHeads();
   }
 
   @override
@@ -58,16 +54,14 @@ class _AddBillState extends State<AddBill> {
     return connectivityResult != ConnectivityResult.none;
   }
 
-  bool _shouldFetchExpenseHeads() {
-    final now = DateTime.now();
-    return now.day == 1 || now.day == 16;
-  }
-
-  Future<void> loadExpenseHeads() async {
+  Future<void> _loadExpenseHeads() async {
     setState(() => _loadingExpenseHeads = true);
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString('expense_heads');
 
+    bool internet = await _hasInternetConnection();
+
+    // Step 1: Pehle cache load kar do taake screen instantly dikhe
     if (cached != null) {
       try {
         final decoded = jsonDecode(cached);
@@ -79,165 +73,124 @@ class _AddBillState extends State<AddBill> {
         }
       } catch (_) {
         _expenseHeads = [];
-        _expenseHeadId = null;
       }
-      setState(() => _loadingExpenseHeads = false);
-    } else if (await _hasInternetConnection()) {
-      await fetchExpenseHeads();
+    }
+
+    setState(() => _loadingExpenseHeads = false);
+
+    // Step 2: Agar internet hai to background mein fresh data fetch karo
+    if (internet) {
+      await _fetchExpenseHeads(showSnack: cached == null);
     } else {
-      if (mounted) {
+      if (_expenseHeads.isEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("No internet. Expense Heads not available"),
+            content: Text("⚠️ Offline — showing last saved expense heads."),
           ),
         );
       }
-      setState(() {
-        _expenseHeads = [];
-        _expenseHeadId = null;
-        _loadingExpenseHeads = false;
-      });
-    }
-
-    if (await _hasInternetConnection() && _shouldFetchExpenseHeads()) {
-      await fetchExpenseHeads();
     }
   }
 
-  Future<void> fetchExpenseHeads() async {
-    setState(() => _loadingExpenseHeads = true);
-
-    final url = Uri.parse(
-      "https://stage-cash.fesf-it.com/api/get-expense-heads",
-    );
+  Future<void> _fetchExpenseHeads({bool showSnack = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token') ?? '';
 
-    if (token.isEmpty) {
+    // try {
+    final response = await http.get(
+      Uri.parse("https://stage-cash.fesf-it.com/api/get-expense-heads"),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      final list = decoded is Map && decoded['data'] is List
+          ? decoded['data']
+          : (decoded is List ? decoded : []);
+      _expenseHeads = List<Map<String, dynamic>>.from(list);
+      _expenseHeadId = _expenseHeads.isNotEmpty
+          ? _expenseHeads.first['id']
+          : null;
+
+      // ✅ Cache update
+      await prefs.setString('expense_heads', jsonEncode(_expenseHeads));
+
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Auth token missing.')));
+        setState(() {});
+        if (showSnack) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("✅ Expense heads updated from server."),
+            ),
+          );
+        }
       }
-      setState(() {
-        _expenseHeads = [];
-        _expenseHeadId = null;
-        _loadingExpenseHeads = true;
-      });
-      return;
-    }
-
-    try {
-      final response = await http.get(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200 && response.body.isNotEmpty) {
-        final decoded = jsonDecode(response.body);
-
-        // ✅ Directly use the list as-is from API (no filtering/sorting)
-        final List<dynamic> listData =
-            decoded is Map && decoded.containsKey('data')
-            ? decoded['data']
-            : (decoded is List ? decoded : []);
-
-        _expenseHeads = List<Map<String, dynamic>>.from(listData);
-
-        // ✅ Set first ID as default (optional)
-        _expenseHeadId = _expenseHeads.isNotEmpty
-            ? _expenseHeads.first['id']
-            : null;
-
-        // ✅ Save exactly as API returned (for caching)
-        await prefs.setString('expense_heads', jsonEncode(_expenseHeads));
-      } else {
-        throw Exception(
-          'Failed to load expense heads (code: ${response.statusCode})',
-        );
-      }
-    } catch (e) {
+    } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading expense heads: $e')),
+          SnackBar(content: Text("⚠️ Server error: ${response.statusCode}")),
         );
       }
-    } finally {
-      if (mounted) setState(() => _loadingExpenseHeads = false);
     }
   }
+  //    catch (e) {
+  //     if (mounted) {
+  //       _showSnack("⚠️ Error fetching expense heads: $e");
+  //     }
+  //   }
+  // }
 
-  void _showPicker() {
+  Future<void> _pickImage(ImageSource source) async {
+    final picked = await _picker.pickImage(source: source, imageQuality: 80);
+    if (picked != null) setState(() => _image = File(picked.path));
+  }
+
+  void _showImagePicker() {
     showModalBottomSheet(
       context: context,
-      builder: (BuildContext bc) => Wrap(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.photo_camera, color: Colors.blue),
-            title: const Text(
-              "Camera",
-              style: TextStyle(fontWeight: FontWeight.bold),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera, color: Colors.blue),
+              title: const Text("Camera"),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.camera);
+              },
             ),
-            onTap: () {
-              _pickImage(ImageSource.camera);
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_library, color: Colors.pink),
-            title: const Text(
-              "Gallery",
-              style: TextStyle(fontWeight: FontWeight.bold),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.purple),
+              title: const Text("Gallery"),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.gallery);
+              },
             ),
-            onTap: () {
-              _pickImage(ImageSource.gallery);
-              Navigator.pop(context);
-            },
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final now = DateTime.now();
-    final prevMonth = now.month == 1 ? 12 : now.month - 1;
-    final prevYear = now.month == 1 ? now.year - 1 : now.year;
-    final firstAllowedDate = DateTime(prevYear, prevMonth, 1);
-    final lastAllowedDate = now;
-
+  Future<void> _selectDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: firstAllowedDate,
-      lastDate: lastAllowedDate,
-      builder: (ctx, child) => Theme(
-        data: ThemeData.light().copyWith(
-          colorScheme: const ColorScheme.light(primary: Colors.deepPurple),
-        ),
-        child: child ?? const SizedBox.shrink(),
-      ),
+      firstDate: DateTime(DateTime.now().year),
+      lastDate: DateTime.now(),
     );
-    if (picked != null) setState(() => _selectedDate = picked);
-  }
 
-  Future<void> _pickImage(ImageSource source) async {
-    final pickedFile = await _picker.pickImage(source: source);
-    if (pickedFile != null) {
-      setState(() => image = File(pickedFile.path));
-    }
+    if (picked != null) setState(() => _selectedDate = picked);
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-
-    if (image == null && widget.imageFile == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please select an image")));
+    if (_image == null && widget.imageFile == null) {
+      _showSnack("Please select an image.");
       return;
     }
 
@@ -245,110 +198,100 @@ class _AddBillState extends State<AddBill> {
 
     final selectedExpense = _expenseHeads.firstWhere(
       (h) => h['id'] == _expenseHeadId,
-      orElse: () => {'name': 'Unknown'},
+      orElse: () => {'id': 0, 'name': 'Unknown'},
     );
 
     final newBill = {
-      'narration': _narrController.text,
-      'expenseHead': selectedExpense['name'],
-      'amount': '${_amountController.text}/=',
-      'date': DateFormat('dd/MM/yyyy').format(_selectedDate),
-      'image': image ?? widget.imageFile,
+      'narration': _narrController.text.trim(),
+      'expenseHead': {
+        'id': selectedExpense['id'],
+        'name': selectedExpense['name'],
+      },
+      'amount': _amountController.text.trim(),
+      'date': DateFormat('dd-MM-yyyy').format(_selectedDate),
     };
-
-    _submitBills.add(newBill);
-    _billCount++;
-
-    if (!mounted) return;
 
     await Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (context) => BillScreen(
+        builder: (_) => BillScreen(
           name: widget.name,
           locationCode: widget.locationCode,
-          imageFile: image ?? widget.imageFile,
+          imageFile: _image ?? widget.imageFile,
           billData: newBill,
         ),
       ),
       (route) => false,
     );
 
-    setState(() {
-      image = null;
-      _isLoading = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Bill $_billCount added successfully!")),
-    );
+    setState(() => _isLoading = false);
   }
+
+  void _showSnack(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         title: const Text(
-          "Bill Info",
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          "Add Bill",
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
+        backgroundColor: Colors.blue,
+        elevation: 2,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(18),
         child: Form(
           key: _formKey,
-          child: ListView(
+          child: Column(
             children: [
               TextFormField(
                 controller: _narrController,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: "Narration",
-                  prefixIcon: const Icon(Icons.note, color: Colors.blue),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  prefixIcon: Icon(Icons.note_alt_outlined, color: Colors.blue),
+                  border: OutlineInputBorder(),
                 ),
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? "Please enter narration" : null,
+                validator: (v) {
+                  if (v!.isEmpty) {
+                    return "Enter narration";
+                  } else if (v.length > 250) {
+                    return "Narration must be between 1 to 250 character";
+                  } else {
+                    return null;
+                  }
+                },
               ),
-              const SizedBox(height: 20),
-
+              const SizedBox(height: 15),
               _loadingExpenseHeads
-                  ? const Center(
-                      child: CircularProgressIndicator(color: Colors.black),
-                    )
+                  ? const Center(child: CircularProgressIndicator())
                   : DropdownButtonFormField<int>(
-                      decoration: InputDecoration(
-                        labelText: 'Expense Head',
-                        prefixIcon: const Icon(
-                          Icons.arrow_drop_down,
-                          color: Colors.blue,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
                       value: _expenseHeadId,
-                      items: _expenseHeads.map((h) {
-                        return DropdownMenuItem<int>(
-                          value: h['id'],
-                          child: Text(
-                            h['name'].toString(),
-                          ), // API jaisa hi name
-                        );
-                      }).toList(),
-                      onChanged: (v) {
-                        setState(() {
-                          _expenseHeadId = v;
-                        });
-                      },
+                      decoration: const InputDecoration(
+                        labelText: "Expense Head",
+                        border: OutlineInputBorder(),
+                      ),
+                      isExpanded: true,
+                      items: _expenseHeads
+                          .map(
+                            (e) => DropdownMenuItem<int>(
+                              value: e['id'],
+                              child: Text(
+                                e['name'],
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _expenseHeadId = v),
                       validator: (v) =>
-                          v == null ? 'Please select expense head' : null,
+                          v == null ? "Select expense head" : null,
                     ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 15),
 
               Card(
                 shape: RoundedRectangleBorder(
@@ -420,70 +363,70 @@ class _AddBillState extends State<AddBill> {
                 ),
               ),
 
-              const SizedBox(height: 20),
-
+              const SizedBox(height: 15),
               ListTile(
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(5),
-                  side: const BorderSide(color: Colors.deepPurple, width: 0.6),
+                  borderRadius: BorderRadius.circular(8),
+                  side: const BorderSide(color: Colors.grey),
                 ),
                 title: Text(
                   'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
+                  style: const TextStyle(fontSize: 16),
                 ),
                 trailing: const Icon(Icons.calendar_today, color: Colors.blue),
-                onTap: () => _selectDate(context),
+                onTap: _selectDate,
               ),
-
-              const SizedBox(height: 25),
-
+              const SizedBox(height: 15),
               GestureDetector(
-                onTap: _showPicker,
+                onTap: _showImagePicker,
                 child: Container(
-                  height: 150,
+                  height: 170,
+                  width: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: Colors.grey.shade400),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: (image ?? widget.imageFile) != null
+                  child: (_image ?? widget.imageFile) != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(10),
                           child: Image.file(
-                            image ?? widget.imageFile!,
+                            _image ?? widget.imageFile!,
                             fit: BoxFit.cover,
                             width: double.infinity,
                           ),
                         )
                       : const Center(
                           child: Text(
-                            "Tap to select image",
-                            style: TextStyle(color: Colors.grey, fontSize: 16),
+                            "📷 Tap to select image",
+                            style: TextStyle(color: Colors.grey),
                           ),
                         ),
                 ),
               ),
-
-              const SizedBox(height: 30),
-
+              const SizedBox(height: 25),
               SizedBox(
                 width: double.infinity,
-                height: 50,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
+                  onPressed: _isLoading ? null : _submit,
                   child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                          "Submit",
-                          style: TextStyle(
-                            fontSize: 20,
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          _isLoading ? "Uploading..." : "Submit",
+                          style: const TextStyle(
+                            fontSize: 17,
                             fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
                         ),
                 ),

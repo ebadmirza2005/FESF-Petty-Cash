@@ -16,6 +16,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _isLoading = false;
+  bool passwordVisible = true;
+  String? _errorMessage; // 🔹 New variable for showing invalid error
 
   @override
   void initState() {
@@ -31,7 +33,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null; // Reset error before login
+    });
 
     try {
       final response = await http.post(
@@ -44,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final body = jsonDecode(response.body);
+
       if (response.statusCode == 200 && body['data'] != null) {
         final data = body['data'];
         final user = data['user'];
@@ -70,20 +77,38 @@ class _LoginScreenState extends State<LoginScreen> {
           (route) => false,
         );
       } else {
-        _showSnack(body['message'] ?? "Login failed");
+        // 🔹 Show single error message
+        setState(() {
+          _errorMessage = "Invalid email or password";
+        });
       }
     } catch (e) {
-      _showSnack("Error: $e");
+      setState(() {
+        _errorMessage = "Invalid email or password";
+      });
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showSnack(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-
-  InputDecoration _inputStyle(String label) =>
-      InputDecoration(labelText: label, border: const OutlineInputBorder());
+  InputDecoration _inputStyle(String label) => InputDecoration(
+    labelText: label,
+    hintText: 'Enter Your $label',
+    border: const OutlineInputBorder(),
+    suffixIcon: label == "Password"
+        ? IconButton(
+            icon: Icon(
+              passwordVisible ? Icons.visibility_off : Icons.visibility,
+              color: Colors.blue,
+            ),
+            onPressed: () {
+              setState(() {
+                passwordVisible = !passwordVisible;
+              });
+            },
+          )
+        : null,
+  );
 
   @override
   void dispose() {
@@ -103,6 +128,11 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                SizedBox(
+                  width: 150,
+                  height: 130,
+                  child: Image.asset("assets/FESF.png"),
+                ),
                 const Text(
                   "Welcome",
                   style: TextStyle(
@@ -117,31 +147,60 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(fontSize: 18, color: Color(0xff1c1c1c)),
                 ),
                 const SizedBox(height: 26),
+
+                // 🔹 Show "Invalid email or password" error
+                if (_errorMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                        backgroundColor: Color(0xfff2dfdf),
+                        color: Colors.red,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+
+                // 🔹 Email field
                 TextFormField(
                   controller: _emailCtrl,
-                  decoration: _inputStyle('Email'),
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'Enter Your Email',
+                    border: OutlineInputBorder(),
+                  ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return "Email is required";
                     final regex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                    return regex.hasMatch(v) ? null : "Enter a valid email";
+                    return regex.hasMatch(v)
+                        ? null
+                        : "Enter a valid email address";
                   },
                 ),
+
                 const SizedBox(height: 16),
+
+                // 🔹 Password field
                 TextFormField(
                   controller: _passCtrl,
-                  obscureText: true,
+                  obscureText: passwordVisible,
                   decoration: _inputStyle('Password'),
                   validator: (v) =>
                       (v == null || v.isEmpty) ? "Password is required!" : null,
                 ),
+
                 const SizedBox(height: 20),
+
+                // 🔹 Login button
                 SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _login,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xff3b62ff),
+                      backgroundColor: Colors.blue,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),

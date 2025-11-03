@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:project/Screen/uploaded_bills.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:project/Screen/big_image.dart';
 import 'package:project/Screen/add_bill.dart';
 import 'package:project/Screen/login.dart';
 
@@ -29,14 +31,16 @@ class _BillScreenState extends State<BillScreen> {
   String _reportingPeriod = 'Loading...';
   int? _reportingPeriodId;
 
-  bool _loadingBalance = false, _loadingReport = false;
-  Map<String, dynamic>? _savedBillData;
-  File? _savedImageFile;
+  bool _loadingBalance = false, _loadingReport = false, _loadingOpening = false;
+
+  List<Map<String, dynamic>> _bills = [];
+  List<String> _billImagePaths = [];
+  int _uploadedBill = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadSavedBill();
+    _loadBills();
     _refreshData();
   }
 
@@ -69,7 +73,10 @@ class _BillScreenState extends State<BillScreen> {
   }
 
   Future<void> _fetchReportingPeriod() async {
-    setState(() => _loadingReport = true);
+    setState(() {
+      _loadingReport = true;
+      _loadingOpening = true;
+    });
     final token = await _getToken();
     if (token == null) return;
 
@@ -92,9 +99,14 @@ class _BillScreenState extends State<BillScreen> {
         });
       }
     } catch (e) {
-      setState(() => _reportingPeriod = 'Error: $e');
+      setState(() => _reportingPeriod = 'No Internet');
     } finally {
-      if (mounted) setState(() => _loadingReport = false);
+      if (mounted) {
+        setState(() {
+          _loadingReport = false;
+          _loadingOpening = false;
+        });
+      }
     }
   }
 
@@ -108,108 +120,143 @@ class _BillScreenState extends State<BillScreen> {
     );
   }
 
-  Future<void> _uploadBill() async {
+  Future<void> _saveBills() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('bills', jsonEncode(_bills));
+    await prefs.setStringList('billImages', _billImagePaths);
+    await prefs.setInt('uploadedBillsCount', _uploadedBill);
+  }
+
+  Future<void> _loadBills() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedBills = prefs.getString('bills');
+    final savedPaths = prefs.getStringList('billImages');
+    final uploadedCount = prefs.getInt('uploadedBillsCount');
+
+    if (savedBills != null) {
+      final decoded = jsonDecode(savedBills);
+      if (decoded is List) {
+        setState(() {
+          _bills = List<Map<String, dynamic>>.from(decoded);
+          _billImagePaths = savedPaths ?? [];
+          _uploadedBill = uploadedCount ?? _bills.length;
+        });
+      }
+    }
+
+    if (widget.billData != null && widget.imageFile != null) {
+      _addNewBill(widget.billData!, widget.imageFile!);
+    }
+  }
+
+  void _addNewBill(Map<String, dynamic> billData, File imageFile) async {
+    setState(() {
+      _bills.add(billData);
+      _billImagePaths.add(imageFile.path);
+    });
+    await _saveBills();
+  }
+
+  Future<void> _uploadBills() async {
     final token = await _getToken();
     if (token == null || token.isEmpty) {
       _showSnack("Auth token missing.");
       return;
     }
-
-    final data = widget.billData ?? _savedBillData;
-    final image = widget.imageFile ?? _savedImageFile;
-    if (data == null || image == null) {
-      _showSnack("No bill data or image found.");
+    if (_bills.isEmpty) {
+      _showSnack("No bills to upload.");
       return;
     }
 
-    final url = Uri.parse(
-      'https://stage-cash.fesf-it.com/api/post-create-bill',
-    );
-    final req = http.MultipartRequest('POST', url)
-      ..headers.addAll({
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      })
-      ..fields.addAll({
-        'narration': data['narration'] ?? '',
-        'expense_head_id': data['expenseHead'] ?? '',
-        'amount':
-            double.tryParse(
-              data['amount']
-                  .toString()
-                  .replaceAll(
-                    RegExp(r'[^0-9.]'),
-                    '',
-                  ) // sirf digits aur dot allow karega
-                  .trim(),
-            )?.toString() ??
-            '0',
+    List<Map<String, dynamic>> uploadedBillsList = [];
 
-        'date': _formatDate(data['date']),
-        if (_reportingPeriodId != null)
-          'reporting_period_id': _reportingPeriodId.toString(),
-      })
-      ..fields.addAll({
-        'narration': data['narration'] ?? '',
-        'expense_head_id': data['expenseHead'].toString().replaceAll(
-          RegExp(r'[^0-9]'),
-          '',
-        ),
-        'amount':
-            double.tryParse(
-              data['amount']
-                  .toString()
-                  .replaceAll(RegExp(r'[^0-9.]'), '')
-                  .trim(),
-            )?.toString() ??
-            '0',
-        'date': _formatDate(data['date']),
-        if (_reportingPeriodId != null)
-          'reporting_period_id': _reportingPeriodId.toString(),
-      })
-      ..files.add(await http.MultipartFile.fromPath('imageFile', image.path));
+    for (int i = 0; i < _bills.length; i++) {
+      final data = _bills[i];
+      final imagePath = _billImagePaths[i];
+      final image = File(imagePath);
 
-    print("🟢 Final Data:");
-    print({
-      'narration': data['narration'],
-      'expense_head_id': data['expenseHead'].toString().split('-').first.trim(),
+      final expenseHead = data['expenseHead'];
+      final expenseHeadId = expenseHead is Map
+          ? expenseHead['id'].toString()
+          : data['expenseHeadId']?.toString() ?? '';
+      final expenseHeadName = expenseHead is Map
+          ? expenseHead['name'].toString()
+          : data['expenseHeadName']?.toString() ?? '';
 
-      'amount': double.tryParse(
-        data['amount'].toString().replaceAll(RegExp(r'[^0-9.]'), '').trim(),
-      )?.toString(),
-      'date': _formatDate(data['date']),
-      'reporting_period_id': _reportingPeriodId,
-      'imageFile': image.path,
-    });
+      final url = Uri.parse(
+        'https://stage-cash.fesf-it.com/api/post-create-bill',
+      );
 
-    try {
+      final req = http.MultipartRequest('POST', url)
+        ..headers.addAll({
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        })
+        ..fields.addAll({
+          'narration': data['narration'] ?? '',
+          'expense_head_id': expenseHeadId,
+          'amount':
+              double.tryParse(
+                data['amount']?.toString().replaceAll(RegExp(r'[^0-9.]'), '') ??
+                    '0',
+              )?.toString() ??
+              '0',
+          'date': _formatDate(data['date']),
+          if (_reportingPeriodId != null)
+            'reporting_period_id': _reportingPeriodId.toString(),
+        })
+        ..files.add(await http.MultipartFile.fromPath('imageFile', image.path));
+
+      // try {
       final res = await req.send();
       final body = await res.stream.bytesToString();
 
-      print("🔹 Server Response Code: ${res.statusCode}");
-      print("🔹 Server Response Body: $body");
-
       if (res.statusCode == 200 || res.statusCode == 201) {
-        _showSnack("✅ Bill uploaded successfully");
+        setState(() {
+          _uploadedBill++;
+        });
+        _showSnack("✅ Bill uploaded: $expenseHeadName");
+
+        uploadedBillsList.add({
+          'expenseHead': {'name': expenseHeadName},
+          'date': data['date'],
+          'narration': data['narration'],
+          'amount': data['amount'],
+          'imagePath': image.path,
+        });
       } else {
         final err = _parseError(body);
-        _showSnack("❌ $err");
+        _showSnack("❌ Failed: $err");
       }
-    } catch (e) {
-      _showSnack("⚠️ Error: $e");
+    }
+    //   catch (e) {
+    //     _showSnack("⚠️ Error uploading: $e");
+    //   }
+    // }
+
+    if (uploadedBillsList.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final existing = prefs.getString('uploadedBillsData');
+      List<Map<String, dynamic>> allUploaded = [];
+
+      if (existing != null) {
+        allUploaded = List<Map<String, dynamic>>.from(jsonDecode(existing));
+      }
+
+      allUploaded.addAll(uploadedBillsList);
+
+      await prefs.setString('uploadedBillsData', jsonEncode(allUploaded));
     }
 
-    print('Expense Head Value: ${data['expenseHead']}');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('bills');
+    await prefs.remove('billImages');
 
     setState(() {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) =>
-              BillScreen(name: widget.name, locationCode: widget.locationCode),
-        ),
-      );
+      _bills.clear();
+      _billImagePaths.clear();
     });
+    await _saveBills();
   }
 
   String _formatDate(dynamic date) {
@@ -235,137 +282,287 @@ class _BillScreenState extends State<BillScreen> {
     }
   }
 
-  Future<void> _loadSavedBill() async {
-    final prefs = await SharedPreferences.getInstance();
-    final billData = prefs.getString('billData');
-    final imagePath = prefs.getString('billImagePath');
-    if (billData != null && imagePath != null) {
-      setState(() {
-        _savedBillData = jsonDecode(billData);
-        _savedImageFile = File(imagePath);
-      });
-    }
-  }
-
   void _showSnack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
-  Widget _infoCard(String title, Widget value) => Card(
-    child: ListTile(title: Text(title), trailing: value),
-  );
-
   @override
   Widget build(BuildContext context) {
-    final bill = widget.billData ?? _savedBillData;
-    final img = widget.imageFile ?? _savedImageFile;
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
-        title: Text(widget.name),
-        actions: [
-          IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoCard(
-              'Current Balance',
-              _loadingBalance
-                  ? const CircularProgressIndicator()
-                  : Text('Rs. ${NumberFormat('#,###').format(_balance)}'),
+            Text(
+              widget.name,
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
-            SizedBox(height: 15),
-            _infoCard(
-              'Opening Balance',
-              Text('Rs. ${NumberFormat('#,###').format(_openingBalance)}'),
+            Text(
+              widget.locationCode,
+              style: const TextStyle(fontWeight: FontWeight.w400, fontSize: 20),
             ),
-            SizedBox(height: 15),
-
-            _infoCard(
-              'Reporting Period',
-              _loadingReport
-                  ? const CircularProgressIndicator()
-                  : Text(_reportingPeriod),
-            ),
-            const SizedBox(height: 50),
-            bill != null
-                ? Card(
-                    elevation: 3,
-                    child: ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
+          ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 13),
+            child: DropdownButton<String>(
+              menuWidth: 90,
+              dropdownColor: Colors.blue,
+              icon: const Icon(Icons.logout, color: Colors.white),
+              underline: const SizedBox(),
+              onChanged: (value) {
+                if (value == 'logout') _logout();
+              },
+              items: const [
+                DropdownMenuItem(
+                  value: 'logout',
+                  child: Center(
+                    child: Text(
+                      'Logout',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
                       ),
-                      leading: img != null
-                          ? Image.file(
-                              img,
-                              width: 10,
-                              height: 20,
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                      title: Text(bill['narration'] ?? ''),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Expense: ${bill['expenseHead'] ?? ''}"),
-                          Text("Amount: ${bill['amount'] ?? ''}"),
-                          Text("Date: ${bill['date'] ?? ''}"),
-                        ],
-                      ),
-                    ),
-                  )
-                : const Center(child: Text("No Bill Preview Available")),
-            const SizedBox(height: 50),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                    ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AddBill(
-                          name: widget.name,
-                          locationCode: widget.locationCode,
-                        ),
-                      ),
-                    ),
-                    child: const Text(
-                      "Add Bill",
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                    ),
-                    onPressed: _uploadBill,
-                    child: const Text(
-                      "Upload Bill",
-                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
               ],
             ),
-          ],
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: RefreshIndicator(
+          color: Colors.blue,
+          onRefresh: _refreshData,
+          child: ListView(
+            children: [
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Current Balance:"),
+                          _loadingBalance
+                              ? const CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.blue,
+                                )
+                              : Text(
+                                  'Rs. ${NumberFormat('#,###').format(_balance)}',
+                                ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Opening Balance:"),
+                          _loadingOpening
+                              ? const CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.blue,
+                                )
+                              : Text(
+                                  'Rs. ${NumberFormat('#,###').format(_openingBalance)}',
+                                ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Reporting Period:"),
+                          _loadingReport
+                              ? const CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.blue,
+                                )
+                              : Text(_reportingPeriod),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Text(
+                      "Uploaded Bills",
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      "$_uploadedBill bills",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w400,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                onPressed: () async {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => UploadedBills()),
+                  );
+                  final prefs = await SharedPreferences.getInstance();
+                  setState(() {
+                    _uploadedBill = prefs.getInt('uploadedBillsCount') ?? 0;
+                  });
+                },
+              ),
+              const SizedBox(height: 30),
+
+              if (_bills.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 120),
+                    child: Text(
+                      "No bills added yet",
+                      style: TextStyle(wordSpacing: 5, letterSpacing: 2),
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  children: List.generate(_bills.length, (i) {
+                    final bill = _bills[i];
+                    final img = File(_billImagePaths[i]);
+                    final expenseHead = bill['expenseHead'];
+                    final expenseHeadName = expenseHead is Map
+                        ? expenseHead['name'].toString()
+                        : bill['expenseHeadName']?.toString() ?? 'N/A';
+
+                    return Card(
+                      elevation: 3,
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      child: ListTile(
+                        leading: GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => BigImage(imageFile: img),
+                            ),
+                          ),
+                          child: Image.file(
+                            img,
+                            width: 55,
+                            height: 55,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        title: Text(
+                          expenseHeadName,
+                          style: const TextStyle(fontSize: 15),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 10),
+                            Text("Date: ${bill['date']}"),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    "Narration: ${bill['narration']}",
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _bills.removeAt(i);
+                                      _billImagePaths.removeAt(i);
+                                    });
+                                    _saveBills();
+                                  },
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Text("Amount: ${bill['amount']}"),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              const SizedBox(height: 120),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AddBill(
+                            name: widget.name,
+                            locationCode: widget.locationCode,
+                          ),
+                        ),
+                      ),
+                      child: const Text(
+                        "Add Bill",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: _uploadBills,
+                      child: const Text(
+                        "Upload Bills",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
