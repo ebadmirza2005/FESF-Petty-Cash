@@ -36,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       _isLoading = true;
-      _errorMessage = null; // Reset error before login
+      _errorMessage = null;
     });
 
     try {
@@ -56,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final user = data['user'];
 
         final prefs = await SharedPreferences.getInstance();
-        await prefs
+        prefs
           ..setString("name", user['name'])
           ..setString("email", user['email'])
           ..setString('auth_token', data['token'])
@@ -178,6 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? null
                         : "Enter a valid email address";
                   },
+                  textInputAction: TextInputAction.next,
                 ),
 
                 const SizedBox(height: 16),
@@ -189,6 +190,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: _inputStyle('Password'),
                   validator: (v) =>
                       (v == null || v.isEmpty) ? "Password is required!" : null,
+                  textInputAction: TextInputAction.done,
+                  onFieldSubmitted: (_) => _login(),
                 ),
 
                 const SizedBox(height: 20),

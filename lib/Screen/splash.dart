@@ -13,7 +13,6 @@ class Splash extends StatefulWidget {
 
 class _SplashState extends State<Splash> {
   @override
-  
   void initState() {
     super.initState();
     _navigate();
@@ -29,19 +28,15 @@ class _SplashState extends State<Splash> {
     await Future.delayed(const Duration(seconds: 3));
 
     if (token != null && token.isNotEmpty) {
-      // user already logged in
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => BillScreen(
-            name: name ?? '',
-            locationCode: locationCode ?? '',
-          ),
+          builder: (context) =>
+              BillScreen(name: name ?? '', locationCode: locationCode ?? ''),
         ),
       );
     } else {
-      // user not login
       if (!mounted) return;
       Navigator.pushReplacement(
         context,

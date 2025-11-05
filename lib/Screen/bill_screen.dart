@@ -36,12 +36,15 @@ class _BillScreenState extends State<BillScreen> {
   List<Map<String, dynamic>> _bills = [];
   List<String> _billImagePaths = [];
   int _uploadedBill = 0;
+  String _lastUpdated = '';
 
   @override
   void initState() {
     super.initState();
-    _loadBills();
-    _refreshData();
+    _loadSavedFinancialData().then((_) {
+      _loadBills();
+      _refreshData();
+    });
   }
 
   Future<void> _refreshData() async =>
@@ -52,21 +55,52 @@ class _BillScreenState extends State<BillScreen> {
     return prefs.getString('auth_token');
   }
 
+  Future<void> _loadSavedFinancialData() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final savedBalance = prefs.getDouble('saved_balance');
+    final savedPeriod = prefs.getString('saved_reporting_period');
+    final savedOpening = prefs.getDouble('saved_opening_balance');
+    final savedUpdated = prefs.getString('saved_last_updated');
+    setState(() {
+      _lastUpdated = savedUpdated ?? '';
+    });
+
+    setState(() {
+      _balance = savedBalance ?? 0.0;
+      _reportingPeriod = savedPeriod ?? 'Loading...';
+      _openingBalance = savedOpening ?? 0.0;
+    });
+  }
+
   Future<void> _fetchBalance() async {
     setState(() => _loadingBalance = true);
     final token = await _getToken();
-    if (token == null) return;
+    final prefs = await SharedPreferences.getInstance();
 
     try {
+      if (token == null) throw Exception("No token");
       final res = await http.get(
         Uri.parse('https://stage-cash.fesf-it.com/api/get-balance'),
         headers: {'Authorization': 'Bearer $token'},
       );
+
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        setState(() => _balance = (data['current_balance'] ?? 0).toDouble());
+        final balance = (data['current_balance'] ?? 0).toDouble();
+        setState(() => _balance = balance);
+
+        await prefs.setDouble('saved_balance', balance);
+      } else {
+        throw Exception("Server Error");
       }
-    } catch (_) {
+    } catch (e) {
+      final saved = prefs.getDouble('saved_balance');
+      if (saved != null) {
+        setState(() => _balance = saved);
+      } else {
+        setState(() => _balance = 0.0);
+      }
     } finally {
       if (mounted) setState(() => _loadingBalance = false);
     }
@@ -78,28 +112,64 @@ class _BillScreenState extends State<BillScreen> {
       _loadingOpening = true;
     });
     final token = await _getToken();
-    if (token == null) return;
+    final prefs = await SharedPreferences.getInstance();
 
     try {
+      if (token == null) throw Exception("No token");
       final res = await http.get(
         Uri.parse('https://stage-cash.fesf-it.com/api/get-reporting-period'),
         headers: {'Authorization': 'Bearer $token'},
       );
+
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body)['active_reporting_period'];
         final periodName = data['name'] ?? 'Unknown';
         final endDate = DateTime.tryParse(data['end_date'] ?? '');
         final outdated = endDate != null && endDate.isBefore(DateTime.now());
 
+        final reportingText = outdated ? '$periodName (Outdated)' : periodName;
+        final openingBalance =
+            (data['pivot']?['opening_balance'] as num?)?.toDouble() ?? 0.0;
+
         setState(() {
           _reportingPeriodId = data['id'];
-          _reportingPeriod = outdated ? '$periodName (Outdated)' : periodName;
-          _openingBalance =
-              (data['pivot']?['opening_balance'] as num?)?.toDouble() ?? 0.0;
+          _reportingPeriod = reportingText;
+          _openingBalance = openingBalance;
+        });
+
+        await prefs.setString('saved_reporting_period', reportingText);
+        await prefs.setDouble('saved_opening_balance', openingBalance);
+      } else {
+        throw Exception("Server Error");
+      }
+      final now = DateFormat('dd-MM-yyyy').format(DateTime.now());
+
+      await prefs.setString('saved_last_updated', now);
+
+      setState(() {
+        _lastUpdated = now;
+      });
+    } catch (e) {
+      final savedPeriod = prefs.getString('saved_reporting_period');
+      final savedOpening = prefs.getDouble('saved_opening_balance');
+      final savedUpdated = prefs.getString('saved_last_updated');
+      if (savedUpdated != null) {
+        setState(() => _lastUpdated = savedUpdated);
+      } else {
+        setState(() => _lastUpdated = 'No previous update');
+      }
+
+      if (savedPeriod != null && savedOpening != null) {
+        setState(() {
+          _reportingPeriod = savedPeriod;
+          _openingBalance = savedOpening;
+        });
+      } else {
+        setState(() {
+          _reportingPeriod = 'No Internet';
+          _openingBalance = 0.0;
         });
       }
-    } catch (e) {
-      setState(() => _reportingPeriod = 'No Internet');
     } finally {
       if (mounted) {
         setState(() {
@@ -111,12 +181,64 @@ class _BillScreenState extends State<BillScreen> {
   }
 
   Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Center(
+            child: Text(
+              "Confirmation",
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+            ),
+          ),
+          content: Text(
+            "If you log out, all your data will be lost. Do you want to log out?",
+          ),
+          actions: [
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              icon: Icon(
+                Icons.exit_to_app,
+                color: Colors.green,
+                fontWeight: FontWeight.bold,
+              ),
+              label: Text(
+                "Cancel",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+            ),
+            // SizedBox(width: 1),
+            ElevatedButton.icon(
+              onPressed: () async {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.clear();
+                if (!mounted) return;
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                );
+              },
+              icon: Icon(
+                Icons.logout,
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+              label: Text(
+                "Logout",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -291,44 +413,26 @@ class _BillScreenState extends State<BillScreen> {
       appBar: AppBar(
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
-        title: Column(
+        title: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               widget.name,
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
+            SizedBox(width: 85),
             Text(
               widget.locationCode,
-              style: const TextStyle(fontWeight: FontWeight.w400, fontSize: 20),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 20),
             ),
           ],
         ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 13),
-            child: DropdownButton<String>(
-              menuWidth: 90,
-              dropdownColor: Colors.blue,
-              icon: const Icon(Icons.logout, color: Colors.white),
-              underline: const SizedBox(),
-              onChanged: (value) {
-                if (value == 'logout') _logout();
-              },
-              items: const [
-                DropdownMenuItem(
-                  value: 'logout',
-                  child: Center(
-                    child: Text(
-                      'Logout',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            child: IconButton(
+              onPressed: _logout,
+              icon: Icon(Icons.logout, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -350,11 +454,13 @@ class _BillScreenState extends State<BillScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text("Current Balance:"),
+                          const Text(
+                            "Current Balance:",
+                            style: TextStyle(fontSize: 15),
+                          ),
                           _loadingBalance
                               ? const CircularProgressIndicator(
                                   strokeWidth: 2,
@@ -365,11 +471,14 @@ class _BillScreenState extends State<BillScreen> {
                                 ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text("Opening Balance:"),
+                          const Text(
+                            "Opening Balance:",
+                            style: TextStyle(fontSize: 15),
+                          ),
                           _loadingOpening
                               ? const CircularProgressIndicator(
                                   strokeWidth: 2,
@@ -380,11 +489,14 @@ class _BillScreenState extends State<BillScreen> {
                                 ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text("Reporting Period:"),
+                          const Text(
+                            "Reporting Period:",
+                            style: TextStyle(fontSize: 15),
+                          ),
                           _loadingReport
                               ? const CircularProgressIndicator(
                                   strokeWidth: 2,
@@ -393,17 +505,29 @@ class _BillScreenState extends State<BillScreen> {
                               : Text(_reportingPeriod),
                         ],
                       ),
+                      SizedBox(height: 20),
+                      Center(
+                        child: Text(
+                          "Last Online At   :   ${_lastUpdated.isNotEmpty ? _lastUpdated : '---'}",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.only(left: 20),
                   backgroundColor: Colors.blue,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
                 child: Row(
@@ -424,6 +548,22 @@ class _BillScreenState extends State<BillScreen> {
                         color: Colors.white,
                       ),
                     ),
+                    IconButton(
+                      onPressed: () async {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => UploadedBills(),
+                          ),
+                        );
+                        final prefs = await SharedPreferences.getInstance();
+                        setState(() {
+                          _uploadedBill =
+                              prefs.getInt('uploadedBillsCount') ?? 0;
+                        });
+                      },
+                      icon: Icon(Icons.arrow_forward, color: Colors.white),
+                    ),
                   ],
                 ),
                 onPressed: () async {
@@ -437,12 +577,12 @@ class _BillScreenState extends State<BillScreen> {
                   });
                 },
               ),
-              const SizedBox(height: 30),
 
+              // const SizedBox(height: 10),
               if (_bills.isEmpty)
                 Center(
                   child: Padding(
-                    padding: EdgeInsets.only(top: 120),
+                    padding: EdgeInsets.only(top: 100),
                     child: Text(
                       "No bills added yet",
                       style: TextStyle(wordSpacing: 5, letterSpacing: 2),
@@ -460,67 +600,113 @@ class _BillScreenState extends State<BillScreen> {
                         : bill['expenseHeadName']?.toString() ?? 'N/A';
 
                     return Card(
-                      elevation: 3,
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      child: ListTile(
-                        leading: GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => BigImage(imageFile: img),
-                            ),
-                          ),
-                          child: Image.file(
-                            img,
-                            width: 55,
-                            height: 55,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        title: Text(
-                          expenseHeadName,
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                        subtitle: Column(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      elevation: 5,
+                      margin: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 12,
+                      ),
+                      shadowColor: Colors.black26,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const SizedBox(height: 10),
-                            Text("Date: ${bill['date']}"),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    "Narration: ${bill['narration']}",
+                            Padding(
+                              padding: const EdgeInsets.only(top: 30),
+                              child: GestureDetector(
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => BigImage(imageFile: img),
                                   ),
                                 ),
-                                IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _bills.removeAt(i);
-                                      _billImagePaths.removeAt(i);
-                                    });
-                                    _saveBills();
-                                  },
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.red,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.file(
+                                    img,
+                                    width: 65,
+                                    height: 65,
+                                    fit: BoxFit.cover,
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
-                            Text("Amount: ${bill['amount']}"),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    expenseHeadName,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "Date: ${bill['date']}",
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "Narration: ${bill['narration']}",
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        "Amount: Rs ${bill['amount']}",
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _bills.removeAt(i);
+                                            _billImagePaths.removeAt(i);
+                                          });
+                                          _saveBills();
+                                        },
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          color: Colors.redAccent,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     );
                   }),
                 ),
-              const SizedBox(height: 120),
+              const SizedBox(height: 90),
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
+                        padding: EdgeInsets.all(20),
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
@@ -538,7 +724,10 @@ class _BillScreenState extends State<BillScreen> {
                       ),
                       child: const Text(
                         "Add Bill",
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -546,6 +735,7 @@ class _BillScreenState extends State<BillScreen> {
                   Expanded(
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
+                        padding: EdgeInsets.all(20),
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
@@ -555,7 +745,10 @@ class _BillScreenState extends State<BillScreen> {
                       onPressed: _uploadBills,
                       child: const Text(
                         "Upload Bills",
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),

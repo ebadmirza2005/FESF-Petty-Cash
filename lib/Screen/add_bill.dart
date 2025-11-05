@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+// import 'package:image_cropper/image_cropper.dart';
 import 'package:intl/intl.dart';
 import 'package:project/Screen/bill_screen.dart';
+import 'package:project/Screen/crop.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:image_picker/image_picker.dart';
@@ -35,6 +37,7 @@ class _AddBillState extends State<AddBill> {
   List<Map<String, dynamic>> _expenseHeads = [];
   File? _image;
   DateTime _selectedDate = DateTime.now();
+  FocusNode FocusColor = new FocusNode();
 
   @override
   void initState() {
@@ -56,12 +59,11 @@ class _AddBillState extends State<AddBill> {
 
   Future<void> _loadExpenseHeads() async {
     setState(() => _loadingExpenseHeads = true);
+
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString('expense_heads');
-
     bool internet = await _hasInternetConnection();
 
-    // Step 1: Pehle cache load kar do taake screen instantly dikhe
     if (cached != null) {
       try {
         final decoded = jsonDecode(cached);
@@ -78,16 +80,13 @@ class _AddBillState extends State<AddBill> {
 
     setState(() => _loadingExpenseHeads = false);
 
-    // Step 2: Agar internet hai to background mein fresh data fetch karo
     if (internet) {
       await _fetchExpenseHeads(showSnack: cached == null);
     } else {
-      if (_expenseHeads.isEmpty && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("⚠️ Offline — showing last saved expense heads."),
-          ),
-        );
+      if (_expenseHeads.isNotEmpty) {
+        _showSnack("⚠️ Offline — showing last saved expense heads.");
+      } else {
+        _showSnack("⚠️ No internet and no saved data found.");
       }
     }
   }
@@ -107,84 +106,90 @@ class _AddBillState extends State<AddBill> {
       final list = decoded is Map && decoded['data'] is List
           ? decoded['data']
           : (decoded is List ? decoded : []);
+
       _expenseHeads = List<Map<String, dynamic>>.from(list);
       _expenseHeadId = _expenseHeads.isNotEmpty
           ? _expenseHeads.first['id']
           : null;
 
-      // ✅ Cache update
       await prefs.setString('expense_heads', jsonEncode(_expenseHeads));
 
       if (mounted) {
         setState(() {});
         if (showSnack) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("✅ Expense heads updated from server."),
-            ),
-          );
+          _showSnack("✅ Expense heads updated from server.");
         }
       }
     } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("⚠️ Server error: ${response.statusCode}")),
-        );
-      }
+      _showSnack("⚠️ Server error: ${response.statusCode}");
     }
   }
-  //    catch (e) {
-  //     if (mounted) {
-  //       _showSnack("⚠️ Error fetching expense heads: $e");
-  //     }
-  //   }
+  // } catch (e) {
+  //   _showSnack("⚠️ Error fetching expense heads: $e");
+  // }
   // }
 
-  Future<void> _pickImage(ImageSource source) async {
-    final picked = await _picker.pickImage(source: source, imageQuality: 80);
-    if (picked != null) setState(() => _image = File(picked.path));
-  }
+  Future<void> pickImage(bool fromGallery) async {
+    final XFile? pickedFile = await _picker.pickImage(
+      source: fromGallery ? ImageSource.gallery : ImageSource.camera,
+      imageQuality: 80,
+    );
 
-  void _showImagePicker() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera, color: Colors.blue),
-              title: const Text("Camera"),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library, color: Colors.purple),
-              title: const Text("Gallery"),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.gallery);
-              },
-            ),
-          ],
-        ),
+    if (pickedFile == null) return;
+
+    // Go to crop screen and get cropped image path
+    final croppedFilePath = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CroppedImage(imagePath: pickedFile.path),
       ),
     );
+
+    if (!mounted) return;
+
+    setState(() {
+      if (croppedFilePath != null && croppedFilePath is String) {
+        _image = File(croppedFilePath);
+      } else {
+        _image = File(pickedFile.path);
+      }
+    });
+
+    print("🖼️ Selected image: ${_image?.path}");
   }
 
   Future<void> _selectDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final start = prefs.getString('report_start_date');
+    final end = prefs.getString('report_end_date');
+
+    final now = DateTime.now();
+
+    DateTime firstDate = now.subtract(const Duration(days: 19));
+    DateTime lastDate = now.subtract(Duration(days: 4));
+
+    if (start != null && end != null) {
+      try {
+        firstDate = DateTime.parse(start);
+        lastDate = DateTime.parse(end);
+      } catch (e) {
+        //
+      }
+    }
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(DateTime.now().year),
-      lastDate: DateTime.now(),
+      initialDate:
+          _selectedDate.isBefore(firstDate) || _selectedDate.isAfter(lastDate)
+          ? firstDate
+          : _selectedDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
     );
 
-    if (picked != null) setState(() => _selectedDate = picked);
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+    }
   }
 
   Future<void> _submit() async {
@@ -248,30 +253,15 @@ class _AddBillState extends State<AddBill> {
           key: _formKey,
           child: Column(
             children: [
-              TextFormField(
-                controller: _narrController,
-                decoration: const InputDecoration(
-                  labelText: "Narration",
-                  prefixIcon: Icon(Icons.note_alt_outlined, color: Colors.blue),
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) {
-                  if (v!.isEmpty) {
-                    return "Enter narration";
-                  } else if (v.length > 250) {
-                    return "Narration must be between 1 to 250 character";
-                  } else {
-                    return null;
-                  }
-                },
-              ),
-              const SizedBox(height: 15),
               _loadingExpenseHeads
                   ? const Center(child: CircularProgressIndicator())
                   : DropdownButtonFormField<int>(
                       value: _expenseHeadId,
                       decoration: const InputDecoration(
                         labelText: "Expense Head",
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(width: 2, color: Colors.blue),
+                        ),
                         border: OutlineInputBorder(),
                       ),
                       isExpanded: true,
@@ -291,6 +281,91 @@ class _AddBillState extends State<AddBill> {
                           v == null ? "Select expense head" : null,
                     ),
 
+              const SizedBox(height: 15),
+
+              GestureDetector(
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                    ),
+                    builder: (_) => SafeArea(
+                      child: Wrap(
+                        children: [
+                          ListTile(
+                            leading: const Icon(
+                              Icons.photo_camera,
+                              color: Colors.blue,
+                            ),
+                            title: const Text("Camera"),
+                            onTap: () {
+                              Navigator.pop(context);
+                              pickImage(false);
+                            },
+                          ),
+                          ListTile(
+                            leading: const Icon(
+                              Icons.photo_library,
+                              color: Colors.purple,
+                            ),
+                            title: const Text("Gallery"),
+                            onTap: () {
+                              Navigator.pop(context);
+                              pickImage(true);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  height: 170,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade400),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: (_image ?? widget.imageFile) != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(15),
+                          child: AspectRatio(
+                            aspectRatio: 1, // square view
+                            child: Image.file(
+                              _image ?? widget.imageFile!,
+                              key: ValueKey(
+                                _image?.path ?? widget.imageFile?.path,
+                              ),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        )
+                      : const Center(
+                          child: Text(
+                            "📷 Tap to select image",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                ),
+              ),
+
+              const SizedBox(height: 15),
+
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: const BorderSide(color: Colors.grey),
+                ),
+                title: Text(
+                  'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                trailing: const Icon(Icons.calendar_today, color: Colors.blue),
+                onTap: _selectDate,
+              ),
               const SizedBox(height: 15),
 
               Card(
@@ -336,9 +411,14 @@ class _AddBillState extends State<AddBill> {
                           controller: _amountController,
                           decoration: InputDecoration(
                             labelText: 'Amount',
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                width: 2,
+                                color: Colors.blue,
+                              ),
+                            ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
                               vertical: 16,
@@ -349,11 +429,17 @@ class _AddBillState extends State<AddBill> {
                             decimal: true,
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty)
+                            if (v == null || v.isEmpty) {
                               return 'Please enter amount';
+                            }
                             final n = num.tryParse(v);
-                            if (n == null || n <= 0)
+                            if (n == null || n <= 0) {
                               return 'Enter valid amount';
+                            }
+
+                            if (n > 50000) {
+                              return "Enter number between 1 to 50000";
+                            }
                             return null;
                           },
                         ),
@@ -364,50 +450,40 @@ class _AddBillState extends State<AddBill> {
               ),
 
               const SizedBox(height: 15),
-              ListTile(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: const BorderSide(color: Colors.grey),
-                ),
-                title: Text(
-                  'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                trailing: const Icon(Icons.calendar_today, color: Colors.blue),
-                onTap: _selectDate,
-              ),
-              const SizedBox(height: 15),
-              GestureDetector(
-                onTap: _showImagePicker,
-                child: Container(
-                  height: 170,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade400),
-                    borderRadius: BorderRadius.circular(10),
+
+              TextFormField(
+                controller: _narrController,
+                focusNode: FocusColor,
+                cursorColor: Colors.blue,
+                decoration: const InputDecoration(
+                  labelText: "Narration",
+                  labelStyle: TextStyle(fontWeight: FontWeight.w300),
+                  hintText: "Enter Narration",
+                  hintStyle: TextStyle(fontWeight: FontWeight.w300),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(width: 2, color: Colors.blue),
                   ),
-                  child: (_image ?? widget.imageFile) != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.file(
-                            _image ?? widget.imageFile!,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                          ),
-                        )
-                      : const Center(
-                          child: Text(
-                            "📷 Tap to select image",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.note_alt_outlined, color: Colors.blue),
                 ),
+                validator: (v) {
+                  if (v!.isEmpty) return "Enter narration";
+                  if (v.length > 250) {
+                    return "Narration must be between 1 to 250 characters";
+                  }
+                  return null;
+                },
               ),
-              const SizedBox(height: 25),
+
+              const SizedBox(height: 15),
+
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(7),
+                    ),
                     backgroundColor: Colors.blue,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
@@ -421,9 +497,9 @@ class _AddBillState extends State<AddBill> {
                             strokeWidth: 2,
                           ),
                         )
-                      : Text(
-                          _isLoading ? "Uploading..." : "Submit",
-                          style: const TextStyle(
+                      : const Text(
+                          "Submit",
+                          style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,

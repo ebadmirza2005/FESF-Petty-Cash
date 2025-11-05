@@ -35,7 +35,7 @@ class _UploadedBillsState extends State<UploadedBills> {
     await prefs.setString('uploadedBillsData', jsonEncode(_uploadedBills));
   }
 
-  void _removeBill(int index) async {
+  void removeBill(int index) async {
     setState(() {
       _uploadedBills.removeAt(index);
     });
