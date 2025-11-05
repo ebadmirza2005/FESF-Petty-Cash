@@ -377,6 +377,7 @@ class _BillScreenState extends State<BillScreen> {
     setState(() {
       _bills.clear();
       _billImagePaths.clear();
+      Navigator.pop(context);
     });
     await _saveBills();
   }
@@ -678,11 +679,64 @@ class _BillScreenState extends State<BillScreen> {
                                       ),
                                       IconButton(
                                         onPressed: () {
-                                          setState(() {
-                                            _bills.removeAt(i);
-                                            _billImagePaths.removeAt(i);
-                                          });
-                                          _saveBills();
+                                          showDialog(
+                                            context: context,
+                                            builder: (BuildContext context) {
+                                              return AlertDialog(
+                                                title: Text("Alert!"),
+                                                content: Text(
+                                                  "If you want to remove it so your bill and data will be lost. Do you wanna remove.",
+                                                ),
+                                                actions: [
+                                                  ElevatedButton.icon(
+                                                    onPressed: () {
+                                                      Navigator.pop(context);
+                                                    },
+                                                    icon: Icon(
+                                                      Icons.exit_to_app,
+                                                      color: Colors.green,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                    label: Text(
+                                                      "Cancel",
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors.green,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  SizedBox(width: 21),
+                                                  ElevatedButton.icon(
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _bills.removeAt(i);
+                                                        _billImagePaths
+                                                            .removeAt(i);
+                                                        Navigator.pop(context);
+                                                      });
+                                                      _saveBills();
+                                                    },
+                                                    icon: Icon(
+                                                      Icons.remove_circle,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.red,
+                                                    ),
+                                                    label: Text(
+                                                      "Ok",
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors.red,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              );
+                                            },
+                                          );
                                         },
                                         icon: const Icon(
                                           Icons.delete_outline,
@@ -742,7 +796,62 @@ class _BillScreenState extends State<BillScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      onPressed: _uploadBills,
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return AlertDialog(
+                              title: Center(
+                                child: Text(
+                                  "Confirmation",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ),
+                              content: Text(
+                                "All your data will be uploaded to the server and then you cannot edit what you want to upload on server.",
+                              ),
+                              actions: [
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                  },
+                                  icon: Icon(
+                                    Icons.exit_to_app,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                  ),
+                                  label: Text(
+                                    "Cancel",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                ),
+                                // SizedBox(width: 100),
+                                ElevatedButton.icon(
+                                  onPressed: _uploadBills,
+                                  icon: Icon(
+                                    Icons.upload,
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  label: Text(
+                                    "Upload",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      },
                       child: const Text(
                         "Upload Bills",
                         style: TextStyle(
