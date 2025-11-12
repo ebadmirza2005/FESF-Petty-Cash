@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-// import 'package:image_cropper/image_cropper.dart';
 import 'package:intl/intl.dart';
 import 'package:project/Screen/bill_screen.dart';
 import 'package:project/Screen/crop.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 
 class AddBill extends StatefulWidget {
   final File? imageFile;
@@ -35,9 +35,11 @@ class _AddBillState extends State<AddBill> {
   bool _isLoading = false;
   bool _loadingExpenseHeads = false;
   List<Map<String, dynamic>> _expenseHeads = [];
-  File? _image;
+
+  File? _image; 
+  String? tempImagePath;
   DateTime _selectedDate = DateTime.now();
-  FocusNode FocusColor = new FocusNode();
+  FocusNode FocusColor = FocusNode();
 
   @override
   void initState() {
@@ -95,7 +97,6 @@ class _AddBillState extends State<AddBill> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token') ?? '';
 
-    // try {
     final response = await http.get(
       Uri.parse("https://stage-cash.fesf-it.com/api/get-expense-heads"),
       headers: {'Authorization': 'Bearer $token'},
@@ -116,18 +117,12 @@ class _AddBillState extends State<AddBill> {
 
       if (mounted) {
         setState(() {});
-        if (showSnack) {
-          _showSnack("✅ Expense heads updated from server.");
-        }
+        if (showSnack) _showSnack("✅ Expense heads updated from server.");
       }
     } else {
       _showSnack("⚠️ Server error: ${response.statusCode}");
     }
   }
-  // } catch (e) {
-  //   _showSnack("⚠️ Error fetching expense heads: $e");
-  // }
-  // }
 
   Future<void> pickImage(bool fromGallery) async {
     final XFile? pickedFile = await _picker.pickImage(
@@ -137,7 +132,16 @@ class _AddBillState extends State<AddBill> {
 
     if (pickedFile == null) return;
 
-    // Go to crop screen and get cropped image path
+    File file = File(pickedFile.path);
+    String? validationMessage = await _validateImage(file);
+
+    if (validationMessage != null) {
+      _showSnack(validationMessage);
+      return;
+    }
+
+    tempImagePath = pickedFile.path; // store original temporarily
+
     final croppedFilePath = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -149,47 +153,56 @@ class _AddBillState extends State<AddBill> {
 
     setState(() {
       if (croppedFilePath != null && croppedFilePath is String) {
-        _image = File(croppedFilePath);
-      } else {
-        _image = File(pickedFile.path);
+        _image = File(croppedFilePath); // Only show cropped image
       }
     });
 
     print("🖼️ Selected image: ${_image?.path}");
   }
 
-  Future<void> _selectDate() async {
-    final prefs = await SharedPreferences.getInstance();
-    final start = prefs.getString('report_start_date');
-    final end = prefs.getString('report_end_date');
+  Future<String?> _validateImage(File file) async {
+    String extension = file.path.split('.').last.toLowerCase();
+    List<String> allowed = ['jpg', 'jpeg', 'png'];
+    if (!allowed.contains(extension))
+      return "❌ Only JPG or PNG images are allowed.";
 
-    final now = DateTime.now();
+    int fileSize = await file.length();
+    const int maxSize = 5 * 1024 * 1024;
+    if (fileSize > maxSize) return "⚠️ Image size must be under 5 MB.";
+    if (fileSize == 0) return "❌ Image file is empty.";
 
-    DateTime firstDate = now.subtract(const Duration(days: 19));
-    DateTime lastDate = now.subtract(Duration(days: 4));
-
-    if (start != null && end != null) {
-      try {
-        firstDate = DateTime.parse(start);
-        lastDate = DateTime.parse(end);
-      } catch (e) {
-        //
+    try {
+      final bytes = await file.readAsBytes();
+      final image = img.decodeImage(bytes);
+      if (image == null) return "❌ File is not a valid image.";
+      if (image.width < 200 || image.height < 200) {
+        return "⚠️ Image resolution too low (min 200x200 required).";
       }
+    } catch (e) {
+      return "❌ Unable to read image.";
     }
+
+    return null;
+  }
+
+  Future<void> _selectDate() async {
+    final now = DateTime.now();
+    DateTime startDate = DateTime(2025, 10, 16);
+    DateTime endDate = DateTime(2025, 10, 31);
+    final allowedEndDate = endDate.isAfter(now) ? now : endDate;
 
     final picked = await showDatePicker(
       context: context,
-      initialDate:
-          _selectedDate.isBefore(firstDate) || _selectedDate.isAfter(lastDate)
-          ? firstDate
-          : _selectedDate,
-      firstDate: firstDate,
-      lastDate: lastDate,
+      initialDate: _selectedDate.isBefore(startDate)
+          ? startDate
+          : (_selectedDate.isAfter(allowedEndDate)
+                ? allowedEndDate
+                : _selectedDate),
+      firstDate: startDate,
+      lastDate: allowedEndDate,
     );
 
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-    }
+    if (picked != null) setState(() => _selectedDate = picked);
   }
 
   Future<void> _submit() async {
@@ -329,16 +342,14 @@ class _AddBillState extends State<AddBill> {
                     border: Border.all(color: Colors.grey.shade400),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: (_image ?? widget.imageFile) != null
+                  child: _image != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(15),
                           child: AspectRatio(
-                            aspectRatio: 1, // square view
+                            aspectRatio: 1,
                             child: Image.file(
-                              _image ?? widget.imageFile!,
-                              key: ValueKey(
-                                _image?.path ?? widget.imageFile?.path,
-                              ),
+                              _image!,
+                              key: ValueKey(_image!.path),
                               fit: BoxFit.cover,
                             ),
                           ),
@@ -366,6 +377,7 @@ class _AddBillState extends State<AddBill> {
                 trailing: const Icon(Icons.calendar_today, color: Colors.blue),
                 onTap: _selectDate,
               ),
+
               const SizedBox(height: 15),
 
               Card(
@@ -411,7 +423,7 @@ class _AddBillState extends State<AddBill> {
                           controller: _amountController,
                           decoration: InputDecoration(
                             labelText: 'Amount',
-                            focusedBorder: OutlineInputBorder(
+                            focusedBorder: const OutlineInputBorder(
                               borderSide: BorderSide(
                                 width: 2,
                                 color: Colors.blue,
@@ -429,17 +441,13 @@ class _AddBillState extends State<AddBill> {
                             decimal: true,
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty) {
+                            if (v == null || v.isEmpty)
                               return 'Please enter amount';
-                            }
                             final n = num.tryParse(v);
-                            if (n == null || n <= 0) {
+                            if (n == null || n <= 0)
                               return 'Enter valid amount';
-                            }
-
-                            if (n > 50000) {
+                            if (n > 50000)
                               return "Enter number between 1 to 50000";
-                            }
                             return null;
                           },
                         ),
@@ -468,9 +476,8 @@ class _AddBillState extends State<AddBill> {
                 ),
                 validator: (v) {
                   if (v!.isEmpty) return "Enter narration";
-                  if (v.length > 250) {
+                  if (v.length > 250)
                     return "Narration must be between 1 to 250 characters";
-                  }
                   return null;
                 },
               ),

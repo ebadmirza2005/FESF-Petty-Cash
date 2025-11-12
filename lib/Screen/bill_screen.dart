@@ -124,9 +124,12 @@ class _BillScreenState extends State<BillScreen> {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body)['active_reporting_period'];
         final periodName = data['name'] ?? 'Unknown';
-        final endDate = DateTime.tryParse(data['end_date'] ?? '');
-        final outdated = endDate != null && endDate.isBefore(DateTime.now());
+        final startDate = data['start_date'] ?? '';
+        final endDate = data['end_date'] ?? '';
 
+        final parsedEndDate = DateTime.tryParse(endDate);
+        final outdated =
+            parsedEndDate != null && parsedEndDate.isBefore(DateTime.now());
         final reportingText = outdated ? '$periodName (Outdated)' : periodName;
         final openingBalance =
             (data['pivot']?['opening_balance'] as num?)?.toDouble() ?? 0.0;
@@ -139,6 +142,14 @@ class _BillScreenState extends State<BillScreen> {
 
         await prefs.setString('saved_reporting_period', reportingText);
         await prefs.setDouble('saved_opening_balance', openingBalance);
+
+        await prefs.setString('report_start_date', startDate);
+        await prefs.setString('report_end_date', endDate);
+
+        // Save proper format for AddBill screen
+        if (startDate.isNotEmpty && endDate.isNotEmpty) {
+          await prefs.setString('reporting_period', '$startDate - $endDate');
+        }
       } else {
         throw Exception("Server Error");
       }
@@ -196,6 +207,11 @@ class _BillScreenState extends State<BillScreen> {
           ),
           actions: [
             ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              ),
               onPressed: () {
                 Navigator.of(context).pop();
               },
@@ -214,6 +230,11 @@ class _BillScreenState extends State<BillScreen> {
             ),
             // SizedBox(width: 1),
             ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              ),
               onPressed: () async {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.clear();
@@ -287,7 +308,78 @@ class _BillScreenState extends State<BillScreen> {
     }
     if (_bills.isEmpty) {
       _showSnack("No bills to upload.");
-      return;
+    } else {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Center(
+              child: Text(
+                "Confirmation",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+            ),
+            content: Text(
+              "All your data will be uploaded to the server and then you cannot edit what you want to upload on server.",
+            ),
+            actions: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                icon: Icon(
+                  Icons.exit_to_app,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+                label: Text(
+                  "Cancel",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+              // SizedBox(width: 100),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ),
+                onPressed: (() async {
+                  setState(() {
+                    Navigator.pop(context);
+                    _bills.clear();
+                    _billImagePaths.clear();
+                  });
+                  await _saveBills();
+                }),
+                icon: Icon(
+                  Icons.upload,
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+                label: Text(
+                  "Upload",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
     }
 
     List<Map<String, dynamic>> uploadedBillsList = [];
@@ -373,13 +465,6 @@ class _BillScreenState extends State<BillScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('bills');
     await prefs.remove('billImages');
-
-    setState(() {
-      _bills.clear();
-      _billImagePaths.clear();
-      Navigator.pop(context);
-    });
-    await _saveBills();
   }
 
   String _formatDate(dynamic date) {
@@ -683,12 +768,29 @@ class _BillScreenState extends State<BillScreen> {
                                             context: context,
                                             builder: (BuildContext context) {
                                               return AlertDialog(
-                                                title: Text("Alert!"),
+                                                title: Center(
+                                                  child: Text(
+                                                    "Alert!",
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.red,
+                                                    ),
+                                                  ),
+                                                ),
                                                 content: Text(
                                                   "If you want to remove it so your bill and data will be lost. Do you wanna remove.",
                                                 ),
                                                 actions: [
                                                   ElevatedButton.icon(
+                                                    style: ElevatedButton.styleFrom(
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              5,
+                                                            ),
+                                                      ),
+                                                    ),
                                                     onPressed: () {
                                                       Navigator.pop(context);
                                                     },
@@ -709,6 +811,14 @@ class _BillScreenState extends State<BillScreen> {
                                                   ),
                                                   SizedBox(width: 21),
                                                   ElevatedButton.icon(
+                                                    style: ElevatedButton.styleFrom(
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              5,
+                                                            ),
+                                                      ),
+                                                    ),
                                                     onPressed: () {
                                                       setState(() {
                                                         _bills.removeAt(i);
@@ -796,62 +906,7 @@ class _BillScreenState extends State<BillScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (BuildContext context) {
-                            return AlertDialog(
-                              title: Center(
-                                child: Text(
-                                  "Confirmation",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.red,
-                                  ),
-                                ),
-                              ),
-                              content: Text(
-                                "All your data will be uploaded to the server and then you cannot edit what you want to upload on server.",
-                              ),
-                              actions: [
-                                ElevatedButton.icon(
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                  },
-                                  icon: Icon(
-                                    Icons.exit_to_app,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
-                                  ),
-                                  label: Text(
-                                    "Cancel",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green,
-                                    ),
-                                  ),
-                                ),
-                                // SizedBox(width: 100),
-                                ElevatedButton.icon(
-                                  onPressed: _uploadBills,
-                                  icon: Icon(
-                                    Icons.upload,
-                                    color: Colors.red,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  label: Text(
-                                    "Upload",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.red,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                      },
+                      onPressed: _uploadBills,
                       child: const Text(
                         "Upload Bills",
                         style: TextStyle(
