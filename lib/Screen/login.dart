@@ -15,9 +15,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+
   bool _isLoading = false;
   bool passwordVisible = true;
-  String? _errorMessage; // 🔹 New variable for showing invalid error
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -77,7 +78,6 @@ class _LoginScreenState extends State<LoginScreen> {
           (route) => false,
         );
       } else {
-        // 🔹 Show single error message
         setState(() {
           _errorMessage = "Invalid email or password";
         });
@@ -111,125 +111,163 @@ class _LoginScreenState extends State<LoginScreen> {
   );
 
   @override
-  void dispose() {
-    _emailCtrl.dispose();
-    _passCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    double screenWidth = MediaQuery.of(context).size.width;
+    double screenHeight = MediaQuery.of(context).size.height;
+
     return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(30),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 150,
-                  height: 130,
-                  child: Image.asset("assets/FESF.png"),
+      backgroundColor: Colors.white,
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Header Container
+            Container(
+              height: screenHeight * 0.3,
+              child: Container(
+                width: double.infinity,
+                height: screenHeight * 0.27,
+                decoration: const BoxDecoration(
+                  borderRadius: BorderRadius.only(
+                    bottomRight: Radius.circular(100),
+                    bottomLeft: Radius.circular(100),
+                  ),
                 ),
-                const Text(
-                  "Welcome",
+                child: Center(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      // border: Border.all(color: Colors.blue.shade800, width: 5),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Image.asset(
+                      'assets/FESF.png',
+                      color: const Color(0xff036a84),
+                      width: screenWidth * 0.7,
+                      height: screenWidth * 0.7,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            SizedBox(height: screenHeight * 0.04),
+
+            const Text(
+              "Welcome",
+              style: TextStyle(
+                fontSize: 30,
+                fontWeight: FontWeight.bold,
+                color: Color(0xff1c1c1c),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              "Sign in to continue",
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+                color: Colors.grey,
+              ),
+            ),
+            SizedBox(height: screenHeight * 0.03),
+
+            if (_errorMessage != null)
+              Container(
+                padding: EdgeInsets.symmetric(
+                  vertical: screenHeight * 0.012,
+                  horizontal: screenWidth * 0.04,
+                ),
+                margin: EdgeInsets.only(bottom: screenHeight * 0.02),
+                decoration: BoxDecoration(
+                  color: const Color(0xfff8d6d6),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _errorMessage!,
                   style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xff1c1c1c),
+                    color: Colors.red,
+                    fontSize: screenWidth * 0.04,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 6),
-                const Text(
-                  "Sign in to continue",
-                  style: TextStyle(fontSize: 18, color: Color(0xff1c1c1c)),
-                ),
-                const SizedBox(height: 26),
+              ),
 
-                // 🔹 Show "Invalid email or password" error
-                if (_errorMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(
-                        backgroundColor: Color(0xfff2dfdf),
-                        color: Colors.red,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
+            Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  // Email Field
+                  SizedBox(
+                    width: screenWidth * 0.85,
+                    child: TextFormField(
+                      controller: _emailCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        hintText: 'Enter Your Email',
+                        border: OutlineInputBorder(),
                       ),
+                      validator: (v) {
+                        if (v == null || v.isEmpty) return "Email is required";
+                        final regex = RegExp(
+                          r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                        );
+                        return regex.hasMatch(v)
+                            ? null
+                            : "Enter a valid email address";
+                      },
+                      textInputAction: TextInputAction.next,
                     ),
                   ),
+                  SizedBox(height: screenHeight * 0.025),
 
-                // 🔹 Email field
-                TextFormField(
-                  controller: _emailCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    hintText: 'Enter Your Email',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return "Email is required";
-                    final regex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                    return regex.hasMatch(v)
-                        ? null
-                        : "Enter a valid email address";
-                  },
-                  textInputAction: TextInputAction.next,
-                ),
-
-                const SizedBox(height: 16),
-
-                // 🔹 Password field
-                TextFormField(
-                  controller: _passCtrl,
-                  obscureText: passwordVisible,
-                  decoration: _inputStyle('Password'),
-                  validator: (v) =>
-                      (v == null || v.isEmpty) ? "Password is required!" : null,
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _login(),
-                ),
-
-                const SizedBox(height: 20),
-
-                // 🔹 Login button
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+                  // Password Field
+                  SizedBox(
+                    width: screenWidth * 0.85,
+                    child: TextFormField(
+                      controller: _passCtrl,
+                      obscureText: passwordVisible,
+                      decoration: _inputStyle('Password'),
+                      validator: (v) => (v == null || v.isEmpty)
+                          ? "Password is required!"
+                          : null,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _login(),
                     ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 25,
-                            height: 25,
-                            child: CircularProgressIndicator(
+                  ),
+                  SizedBox(height: screenHeight * 0.04),
+
+                  // Login Button
+                  SizedBox(
+                    width: screenWidth * 0.85,
+                    height: screenHeight * 0.065,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const CircularProgressIndicator(
                               color: Colors.white,
                               strokeWidth: 3,
+                            )
+                          : const Text(
+                              "Login",
+                              style: TextStyle(
+                                fontSize: 20,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          )
-                        : const Text(
-                            'Login',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                    ),
                   ),
-                ),
-              ],
+                  SizedBox(height: screenHeight * 0.05),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

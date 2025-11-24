@@ -1,30 +1,26 @@
 import 'dart:io';
-// import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 class CroppedImage extends StatefulWidget {
-  final String imagePath;
-  const CroppedImage({super.key, required this.imagePath});
+  final File image;
+  const CroppedImage({super.key, required this.image});
 
   @override
   State<CroppedImage> createState() => _CroppedImageState();
 }
 
 class _CroppedImageState extends State<CroppedImage> {
-  Rect _cropRect = const Rect.fromLTWH(50, 50, 200, 200);
+  Rect _cropRect = const Rect.fromLTWH(80, 150, 220, 220);
   Offset? _dragStart;
   bool _isDragging = false;
 
   final GlobalKey _imageKey = GlobalKey();
 
-  bool _isCropped = false; // NEW: crop confirm hone ka flag
-  String? _croppedPath; // NEW: cropped image ka path
-
   Future<void> _cropImage() async {
-    final bytes = await File(widget.imagePath).readAsBytes();
+    final bytes = await widget.image.readAsBytes();
     final original = img.decodeImage(bytes)!;
 
     final renderBox = _imageKey.currentContext!.findRenderObject() as RenderBox;
@@ -51,97 +47,112 @@ class _CroppedImageState extends State<CroppedImage> {
       dir.path,
       'cropped_${DateTime.now().millisecondsSinceEpoch}.png',
     );
+
     await File(newPath).writeAsBytes(img.encodePng(cropped));
-
-    setState(() {
-      _isCropped = true; // crop complete
-      _croppedPath = newPath;
-    });
-
-    Navigator.pop(
-      context,
-      newPath,
-    ); // ya agar preview me dikhana ho to ye line comment karein
+    if (mounted) Navigator.pop(context, newPath);
   }
-
-  // ... baaki GestureDetector aur crop logic same ...
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
+        backgroundColor: Colors.black,
+        elevation: 0,
         foregroundColor: Colors.white,
-        title: const Text("Image Crop"),
-        backgroundColor: Colors.blue,
+        title: const Text(
+          "Crop Image",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 5),
-            child: IconButton(
-              onPressed: _cropImage,
-              icon: const Icon(Icons.check),
-            ),
+          IconButton(
+            icon: const Icon(Icons.check, color: Colors.greenAccent, size: 28),
+            onPressed: _cropImage,
           ),
         ],
       ),
-      body: Center(
-        child: _isCropped
-            ? Container(
-                // Agar crop ho gaya to sirf cropped image show karein
-                child: Image.file(File(_croppedPath!)),
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) => GestureDetector(
-                  onPanStart: (details) {
-                    if (_cropRect.contains(details.localPosition)) {
-                      _isDragging = true;
-                      _dragStart = details.localPosition;
-                    } else {
-                      setState(() {
-                        _cropRect = Rect.fromLTWH(
-                          details.localPosition.dx,
-                          details.localPosition.dy,
-                          0,
-                          0,
-                        );
-                      });
-                    }
-                  },
-                  onPanUpdate: (details) {
-                    if (_isDragging && _dragStart != null) {
-                      final dx = details.localPosition.dx - _dragStart!.dx;
-                      final dy = details.localPosition.dy - _dragStart!.dy;
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            onPanStart: (details) {
+              if (_cropRect.contains(details.localPosition)) {
+                _isDragging = true;
+                _dragStart = details.localPosition;
+              }
+            },
+            onPanUpdate: (details) {
+              if (_isDragging && _dragStart != null) {
+                final dx = details.localPosition.dx - _dragStart!.dx;
+                final dy = details.localPosition.dy - _dragStart!.dy;
 
-                      setState(() {
-                        double newLeft = (_cropRect.left + dx).clamp(
-                          0.0,
-                          constraints.maxWidth - _cropRect.width,
-                        );
-                        double newTop = (_cropRect.top + dy).clamp(
-                          0.0,
-                          constraints.maxHeight - _cropRect.height,
-                        );
+                setState(() {
+                  double newLeft = (_cropRect.left + dx).clamp(
+                    0.0,
+                    constraints.maxWidth - _cropRect.width,
+                  );
+                  double newTop = (_cropRect.top + dy).clamp(
+                    0.0,
+                    constraints.maxHeight - _cropRect.height,
+                  );
+                  _cropRect = Rect.fromLTWH(
+                    newLeft,
+                    newTop,
+                    _cropRect.width,
+                    _cropRect.height,
+                  );
+                  _dragStart = details.localPosition;
+                });
+              }
+            },
+            onPanEnd: (_) => _isDragging = false,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Zoomable image
+                InteractiveViewer(
+                  key: _imageKey,
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Image.file(
+                    widget.image,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: double.infinity,
+                  ),
+                ),
 
-                        _cropRect = Rect.fromLTWH(
-                          newLeft,
-                          newTop,
-                          _cropRect.width,
-                          _cropRect.height,
-                        );
-                        _dragStart = details.localPosition;
-                      });
-                    } else {
-                      double newWidth =
-                          (details.localPosition.dx - _cropRect.left).clamp(
-                            50,
-                            constraints.maxWidth - _cropRect.left,
-                          );
-                      double newHeight =
-                          (details.localPosition.dy - _cropRect.top).clamp(
-                            50,
-                            constraints.maxHeight - _cropRect.top,
-                          );
+                // Dark overlay outside crop area
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(painter: _CropOverlayPainter(_cropRect)),
+                  ),
+                ),
 
+                // White border for crop area
+                Positioned(
+                  left: _cropRect.left,
+                  top: _cropRect.top,
+                  child: Container(
+                    width: _cropRect.width,
+                    height: _cropRect.height,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white, width: 2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+
+                // Resize handle (bottom right)
+                Positioned(
+                  left: _cropRect.right - 16,
+                  top: _cropRect.bottom - 16,
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
                       setState(() {
+                        double newWidth = (_cropRect.width + details.delta.dx)
+                            .clamp(80, constraints.maxWidth - _cropRect.left);
+                        double newHeight = (_cropRect.height + details.delta.dy)
+                            .clamp(80, constraints.maxHeight - _cropRect.top);
                         _cropRect = Rect.fromLTWH(
                           _cropRect.left,
                           _cropRect.top,
@@ -149,79 +160,50 @@ class _CroppedImageState extends State<CroppedImage> {
                           newHeight,
                         );
                       });
-                    }
-                  },
-                  onPanEnd: (details) {
-                    _isDragging = false;
-                  },
-                  child: Stack(
-                    children: [
-                      InteractiveViewer(
-                        key: _imageKey,
-                        minScale: 1,
-                        maxScale: 5,
-                        panEnabled: true,
-                        scaleEnabled: true,
-                        child: Image.file(
-                          File(widget.imagePath),
-                          width: double.infinity,
-                          height: double.infinity,
-                          fit: BoxFit.cover,
-                        ),
+                    },
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: Colors.blueAccent,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                        shape: BoxShape.circle,
                       ),
-                      // Crop rectangle
-                      Positioned(
-                        left: _cropRect.left,
-                        top: _cropRect.top,
-                        child: Container(
-                          width: _cropRect.width,
-                          height: _cropRect.height,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                        ),
+                      child: const Icon(
+                        Icons.drag_handle,
+                        color: Colors.white,
+                        size: 16,
                       ),
-                      // Resize handle
-                      Positioned(
-                        left: _cropRect.right - 10,
-                        top: _cropRect.bottom - 10,
-                        child: GestureDetector(
-                          onPanUpdate: (details) {
-                            setState(() {
-                              double newWidth =
-                                  (_cropRect.width + details.delta.dx).clamp(
-                                    50,
-                                    constraints.maxWidth - _cropRect.left,
-                                  );
-                              double newHeight =
-                                  (_cropRect.height + details.delta.dy).clamp(
-                                    50,
-                                    constraints.maxHeight - _cropRect.top,
-                                  );
-
-                              _cropRect = Rect.fromLTWH(
-                                _cropRect.left,
-                                _cropRect.top,
-                                newWidth,
-                                newHeight,
-                              );
-                            });
-                          },
-                          child: Container(
-                            width: 20,
-                            height: 20,
-                            decoration: BoxDecoration(
-                              color: Colors.blue,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
+  }
+}
+
+// Overlay painter for dim background
+class _CropOverlayPainter extends CustomPainter {
+  final Rect cropRect;
+  _CropOverlayPainter(this.cropRect);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.black.withOpacity(0.6);
+    final path = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height)),
+      Path()..addRect(cropRect),
+    );
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CropOverlayPainter oldDelegate) {
+    return oldDelegate.cropRect != cropRect;
   }
 }

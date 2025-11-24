@@ -36,15 +36,15 @@ class _AddBillState extends State<AddBill> {
   bool _loadingExpenseHeads = false;
   List<Map<String, dynamic>> _expenseHeads = [];
 
-  File? _image; 
-  String? tempImagePath;
-  DateTime _selectedDate = DateTime.now();
-  FocusNode FocusColor = FocusNode();
+  File? _image;
+  DateTime? _selectedDate;
+  String? activeDate;
 
   @override
   void initState() {
     super.initState();
     _loadExpenseHeads();
+    _loadCachedReportingPeriod(); // load last saved reporting period
   }
 
   @override
@@ -61,7 +61,6 @@ class _AddBillState extends State<AddBill> {
 
   Future<void> _loadExpenseHeads() async {
     setState(() => _loadingExpenseHeads = true);
-
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString('expense_heads');
     bool internet = await _hasInternetConnection();
@@ -96,7 +95,6 @@ class _AddBillState extends State<AddBill> {
   Future<void> _fetchExpenseHeads({bool showSnack = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token') ?? '';
-
     final response = await http.get(
       Uri.parse("https://stage-cash.fesf-it.com/api/get-expense-heads"),
       headers: {'Authorization': 'Bearer $token'},
@@ -124,85 +122,158 @@ class _AddBillState extends State<AddBill> {
     }
   }
 
-  Future<void> pickImage(bool fromGallery) async {
-    final XFile? pickedFile = await _picker.pickImage(
-      source: fromGallery ? ImageSource.gallery : ImageSource.camera,
-      imageQuality: 80,
-    );
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
 
-    if (pickedFile == null) return;
+  // Load cached reporting period on screen init
+  Future<void> _loadCachedReportingPeriod() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString('reporting_period');
+    if (cached != null) {
+      try {
+        final data = jsonDecode(cached);
+        final dateFormat = DateFormat('dd-MMM-yy');
+        DateTime endDate = dateFormat.parse(data['end_date']);
+        setState(() {
+          _selectedDate = endDate.isAfter(DateTime.now())
+              ? DateTime.now()
+              : endDate;
+          activeDate = DateFormat('yyyy-MM-dd').format(_selectedDate!);
+        });
+      } catch (_) {}
+    }
+  }
 
-    File file = File(pickedFile.path);
-    String? validationMessage = await _validateImage(file);
+  Future<void> _selectDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    bool internet = await _hasInternetConnection();
 
-    if (validationMessage != null) {
-      _showSnack(validationMessage);
-      return;
+    DateTime today = DateTime.now();
+    DateTime startDate = today.subtract(const Duration(days: 30));
+    DateTime allowedEndDate = today;
+
+    final cached = prefs.getString('reporting_period');
+    if (cached != null) {
+      try {
+        final data = jsonDecode(cached);
+        final dateFormat = DateFormat('dd-MMM-yy');
+        startDate = dateFormat.parse(data['start_date']);
+        DateTime apiEnd = dateFormat.parse(data['end_date']);
+        allowedEndDate = apiEnd.isAfter(today) ? today : apiEnd;
+      } catch (_) {}
     }
 
-    tempImagePath = pickedFile.path; // store original temporarily
+    if (internet) {
+      final token = await _getToken();
+      if (token != null) {
+        try {
+          final res = await http.get(
+            Uri.parse(
+              'https://stage-cash.fesf-it.com/api/get-reporting-period',
+            ),
+            headers: {'Authorization': 'Bearer $token'},
+          );
+          if (res.statusCode == 200) {
+            final body = jsonDecode(res.body);
+            final data = body['active_reporting_period'];
+            await prefs.setString('reporting_period', jsonEncode(data));
 
-    final croppedFilePath = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CroppedImage(imagePath: pickedFile.path),
-      ),
+            final dateFormat = DateFormat('dd-MMM-yy');
+            startDate = dateFormat.parse(data['start_date']);
+            DateTime apiEnd = dateFormat.parse(data['end_date']);
+            allowedEndDate = apiEnd.isAfter(today) ? today : apiEnd;
+          }
+        } catch (_) {}
+      }
+    } else {
+      _showSnack("⚠️ Offline — using saved reporting period");
+    }
+
+    DateTime initialDate = _selectedDate ?? allowedEndDate;
+    if (initialDate.isBefore(startDate)) initialDate = startDate;
+    if (initialDate.isAfter(allowedEndDate)) initialDate = allowedEndDate;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: startDate,
+      lastDate: allowedEndDate,
     );
 
-    if (!mounted) return;
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+        activeDate = DateFormat('yyyy-MM-dd').format(picked);
+      });
+    }
+  }
 
-    setState(() {
-      if (croppedFilePath != null && croppedFilePath is String) {
-        _image = File(croppedFilePath); // Only show cropped image
+  Future<File> compressImage(File file) async {
+    final bytes = await file.readAsBytes();
+    img.Image? image = img.decodeImage(bytes);
+    if (image == null) return file;
+
+    img.Image resized = img.copyResize(image, width: 1200);
+    final compressedBytes = img.encodeJpg(resized, quality: 70);
+
+    final tempPath = "${file.path}.jpg";
+    final compressedFile = File(tempPath);
+    await compressedFile.writeAsBytes(compressedBytes);
+    return compressedFile;
+  }
+
+  Future<void> pickImage(bool fromGallery) async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: fromGallery ? ImageSource.gallery : ImageSource.camera,
+        imageQuality: 50,
+      );
+      if (pickedFile == null) return;
+
+      File file = await compressImage(File(pickedFile.path));
+      final String? validationMessage = await _validateImage(file);
+      if (validationMessage != null) {
+        if (mounted) _showSnack(validationMessage);
+        return;
       }
-    });
 
-    print("🖼️ Selected image: ${_image?.path}");
+      final croppedFilePath = await Navigator.push<String?>(
+        context,
+        MaterialPageRoute(builder: (_) => CroppedImage(image: file)),
+      );
+
+      if (!mounted) return;
+      if (croppedFilePath != null && croppedFilePath.isNotEmpty) {
+        setState(() => _image = File(croppedFilePath));
+      }
+    } catch (_) {
+      if (mounted) _showSnack("Error picking image");
+    }
   }
 
   Future<String?> _validateImage(File file) async {
     String extension = file.path.split('.').last.toLowerCase();
     List<String> allowed = ['jpg', 'jpeg', 'png'];
-    if (!allowed.contains(extension))
-      return "❌ Only JPG or PNG images are allowed.";
+    if (!allowed.contains(extension)) return "❌ Only JPG or PNG allowed";
 
     int fileSize = await file.length();
-    const int maxSize = 5 * 1024 * 1024;
-    if (fileSize > maxSize) return "⚠️ Image size must be under 5 MB.";
-    if (fileSize == 0) return "❌ Image file is empty.";
+    if (fileSize > 15 * 1024 * 1024) return "⚠️ Max 15MB allowed";
+    if (fileSize == 0) return "❌ File is empty";
 
     try {
       final bytes = await file.readAsBytes();
       final image = img.decodeImage(bytes);
-      if (image == null) return "❌ File is not a valid image.";
+      if (image == null) return "❌ Not a valid image";
       if (image.width < 200 || image.height < 200) {
-        return "⚠️ Image resolution too low (min 200x200 required).";
+        return "⚠️ Min 200x200 required";
       }
-    } catch (e) {
-      return "❌ Unable to read image.";
+    } catch (_) {
+      return "❌ Unable to read image";
     }
 
     return null;
-  }
-
-  Future<void> _selectDate() async {
-    final now = DateTime.now();
-    DateTime startDate = DateTime(2025, 10, 16);
-    DateTime endDate = DateTime(2025, 10, 31);
-    final allowedEndDate = endDate.isAfter(now) ? now : endDate;
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate.isBefore(startDate)
-          ? startDate
-          : (_selectedDate.isAfter(allowedEndDate)
-                ? allowedEndDate
-                : _selectedDate),
-      firstDate: startDate,
-      lastDate: allowedEndDate,
-    );
-
-    if (picked != null) setState(() => _selectedDate = picked);
   }
 
   Future<void> _submit() async {
@@ -226,7 +297,7 @@ class _AddBillState extends State<AddBill> {
         'name': selectedExpense['name'],
       },
       'amount': _amountController.text.trim(),
-      'date': DateFormat('dd-MM-yyyy').format(_selectedDate),
+      'date': DateFormat('dd-MM-yyyy').format(_selectedDate!),
     };
 
     await Navigator.pushAndRemoveUntil(
@@ -258,7 +329,6 @@ class _AddBillState extends State<AddBill> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.blue,
-        elevation: 2,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(18),
@@ -269,31 +339,32 @@ class _AddBillState extends State<AddBill> {
               _loadingExpenseHeads
                   ? const Center(child: CircularProgressIndicator())
                   : DropdownButtonFormField<int>(
-                      value: _expenseHeadId,
+                      initialValue: _expenseHeadId,
                       decoration: const InputDecoration(
                         labelText: "Expense Head",
-                        focusedBorder: OutlineInputBorder(
+                        labelStyle: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                        focusedBorder: OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(
                           borderSide: BorderSide(width: 2, color: Colors.blue),
                         ),
-                        border: OutlineInputBorder(),
                       ),
                       isExpanded: true,
-                      items: _expenseHeads
-                          .map(
-                            (e) => DropdownMenuItem<int>(
-                              value: e['id'],
-                              child: Text(
-                                e['name'],
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
+                      items: _expenseHeads.map((e) {
+                        return DropdownMenuItem<int>(
+                          value: e['id'],
+                          child: Text(
+                            e['name'],
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
                       onChanged: (v) => setState(() => _expenseHeadId = v),
                       validator: (v) =>
                           v == null ? "Select expense head" : null,
                     ),
-
               const SizedBox(height: 15),
 
               GestureDetector(
@@ -345,13 +416,10 @@ class _AddBillState extends State<AddBill> {
                   child: _image != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(15),
-                          child: AspectRatio(
-                            aspectRatio: 1,
-                            child: Image.file(
-                              _image!,
-                              key: ValueKey(_image!.path),
-                              fit: BoxFit.cover,
-                            ),
+                          child: Image.file(
+                            _image!,
+                            fit: BoxFit.contain,
+                            width: double.infinity,
                           ),
                         )
                       : const Center(
@@ -365,119 +433,96 @@ class _AddBillState extends State<AddBill> {
 
               const SizedBox(height: 15),
 
-              ListTile(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: const BorderSide(color: Colors.grey),
-                ),
-                title: Text(
-                  'Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                trailing: const Icon(Icons.calendar_today, color: Colors.blue),
-                onTap: _selectDate,
+              FormField<DateTime>(
+                validator: (value) =>
+                    _selectedDate == null ? "Please select a date" : null,
+                builder: (state) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        onTap: _selectDate,
+                        child: Container(
+                          height: 60,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: state.hasError ? Colors.red : Colors.grey,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.calendar_today_rounded,
+                                color: Colors.blue,
+                              ),
+                              const SizedBox(width: 16),
+                              Text(
+                                _selectedDate == null
+                                    ? "Select Date"
+                                    : "Date: ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}",
+                                style: TextStyle(
+                                  color: _selectedDate == null
+                                      ? (state.hasError
+                                            ? Colors.red
+                                            : Colors.grey)
+                                      : Colors.black,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (state.hasError)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 5, left: 5),
+                          child: Text(
+                            state.errorText!,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
 
               const SizedBox(height: 15),
 
-              Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: Colors.deepPurple.withOpacity(0.4),
-                    width: 0.7,
-                  ),
+              TextFormField(
+                controller: _amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
-                color: Colors.deepPurple.withOpacity(0.04),
-                elevation: 0,
-                margin: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 6,
-                    horizontal: 10,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 15,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.deepPurple.withOpacity(0.11),
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: const Text(
-                          'PKR',
-                          style: TextStyle(
-                            color: Colors.blue,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 17,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 13),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _amountController,
-                          decoration: InputDecoration(
-                            labelText: 'Amount',
-                            focusedBorder: const OutlineInputBorder(
-                              borderSide: BorderSide(
-                                width: 2,
-                                color: Colors.blue,
-                              ),
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 16,
-                              horizontal: 11,
-                            ),
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty)
-                              return 'Please enter amount';
-                            final n = num.tryParse(v);
-                            if (n == null || n <= 0)
-                              return 'Enter valid amount';
-                            if (n > 50000)
-                              return "Enter number between 1 to 50000";
-                            return null;
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
+                decoration: const InputDecoration(
+                  labelText: 'Amount',
+                  border: OutlineInputBorder(),
                 ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Enter amount';
+                  final n = num.tryParse(v);
+                  if (n == null || n <= 0) return 'Enter valid amount';
+                  if (n > 50000) return 'Enter number between 1-50000';
+                  return null;
+                },
               ),
 
               const SizedBox(height: 15),
 
               TextFormField(
                 controller: _narrController,
-                focusNode: FocusColor,
-                cursorColor: Colors.blue,
                 decoration: const InputDecoration(
                   labelText: "Narration",
-                  labelStyle: TextStyle(fontWeight: FontWeight.w300),
-                  hintText: "Enter Narration",
-                  hintStyle: TextStyle(fontWeight: FontWeight.w300),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(width: 2, color: Colors.blue),
-                  ),
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.note_alt_outlined, color: Colors.blue),
                 ),
                 validator: (v) {
-                  if (v!.isEmpty) return "Enter narration";
-                  if (v.length > 250)
-                    return "Narration must be between 1 to 250 characters";
+                  if (v == null || v.isEmpty) return "Enter narration";
+                  if (v.length > 250) return "Narration max 250 characters";
                   return null;
                 },
               ),
@@ -487,28 +532,21 @@ class _AddBillState extends State<AddBill> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
+                  onPressed: _isLoading ? null : _submit,
                   style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(7),
-                    ),
                     backgroundColor: Colors.blue,
                     padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  onPressed: _isLoading ? null : _submit,
                   child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
+                      ? const CircularProgressIndicator(color: Colors.white)
                       : const Text(
                           "Submit",
                           style: TextStyle(
-                            fontSize: 17,
                             fontWeight: FontWeight.bold,
+                            fontSize: 20,
                             color: Colors.white,
                           ),
                         ),
