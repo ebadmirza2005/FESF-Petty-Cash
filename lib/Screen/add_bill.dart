@@ -407,7 +407,7 @@ class _AddBillState extends State<AddBill> {
                   );
                 },
                 child: Container(
-                  height: 170,
+                  height: 180,
                   width: double.infinity,
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.grey.shade400),
