@@ -496,6 +496,7 @@ class _BillScreenState extends State<BillScreen> {
 
   @override
   Widget build(BuildContext context) {
+    double width = MediaQuery.of(context).size.width;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.blue,
@@ -524,535 +525,542 @@ class _BillScreenState extends State<BillScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: RefreshIndicator(
-          color: Colors.blue,
-          onRefresh: _refreshData,
-          child: ListView(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(15),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Column(
-                            children: [
-                              Text(
-                                "Current Balance",
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.black,
-                                ),
-                              ),
-                              SizedBox(height: 10),
-                              _loadingBalance
-                                  ? const CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.blue,
-                                    )
-                                  : Text(
-                                      'Rs. ${NumberFormat('#,###').format(_balance)}',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w400,
-                                        color: Colors.black,
-                                      ),
-                                    ),
-                            ],
-                          ),
-                        ],
+      body: Container(
+        width: width * width,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: RefreshIndicator(
+            color: Colors.blue,
+            onRefresh: _refreshData,
+            child: ListView(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ),
-                  ),
-                  Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(15),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Column(
-                            children: [
-                              Text(
-                                "Opening Balance",
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.black,
-                                ),
-                              ),
-                              SizedBox(height: 10),
-                              _loadingOpening
-                                  ? const CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.blue,
-                                    )
-                                  : Text(
-                                      'Rs. ${NumberFormat('#,###').format(_openingBalance)}',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w400,
-                                        color: Colors.black,
-                                      ),
-                                    ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(15),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            "Reporting Period: ",
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w400,
-                              color: Colors.black,
-                            ),
-                          ),
-                          SizedBox(width: 40),
-                          _loadingReport
-                              ? const CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.blue,
-                                )
-                              : Text(
-                                  _reportingPeriod,
+                      child: Padding(
+                        padding: EdgeInsets.all(15),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              children: [
+                                Text(
+                                  "Current Balance",
                                   style: TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 15,
                                     fontWeight: FontWeight.w400,
                                     color: Colors.black,
                                   ),
                                 ),
-                        ],
-                      ),
-                      SizedBox(height: 20),
-                      Center(
-                        child: Text(
-                          "Last Online At   :   ${_lastUpdated.isNotEmpty ? _lastUpdated : '---'}",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 2,
-                            color: Colors.grey[600],
-                          ),
+                                SizedBox(height: 10),
+                                _loadingBalance
+                                    ? const CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.blue,
+                                      )
+                                    : Text(
+                                        'Rs. ${NumberFormat('#,###').format(_balance)}',
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w400,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.only(left: 20, top: 5, bottom: 5),
-                  backgroundColor: Colors.blue,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Text(
-                      "Uploaded Bills",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
                     ),
-                    const Spacer(),
-                    Text(
-                      "$_uploadedBill bills",
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () async {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => UploadedBills(),
-                          ),
-                        );
-                        final prefs = await SharedPreferences.getInstance();
-                        setState(() {
-                          _uploadedBill =
-                              prefs.getInt('uploadedBillsCount') ?? 0;
-                        });
-                      },
-                      icon: Icon(
-                        Icons.arrow_forward,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                      child: Padding(
+                        padding: EdgeInsets.all(15),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              children: [
+                                Text(
+                                  "Opening Balance",
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                SizedBox(height: 10),
+                                _loadingOpening
+                                    ? const CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.blue,
+                                      )
+                                    : Text(
+                                        'Rs. ${NumberFormat('#,###').format(_openingBalance)}',
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w400,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
                 ),
-                onPressed: () async {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => UploadedBills()),
-                  );
-                  final prefs = await SharedPreferences.getInstance();
-                  setState(() {
-                    _uploadedBill = prefs.getInt('uploadedBillsCount') ?? 0;
-                  });
-                },
-              ),
-
-              if (_bills.isEmpty)
-                Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 150, bottom: 90),
-                    child: Text(
-                      "No bills added yet",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        wordSpacing: 5,
-                        letterSpacing: 4,
-                        color: Colors.grey[600],
-                      ),
-                    ),
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                )
-              else
-                uploading
-                    ? Column(
-                        children: [
-                          SizedBox(height: 70),
-                          SizedBox(
-                            width: 50,
-                            height: 50,
-                            child: CircularProgressIndicator(
-                              color: Colors.blue,
-                              strokeWidth: 5,
+                  child: Padding(
+                    padding: const EdgeInsets.all(15),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              "Reporting Period: ",
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.black,
+                              ),
+                            ),
+                            SizedBox(width: 40),
+                            _loadingReport
+                                ? const CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.blue,
+                                  )
+                                : Text(
+                                    _reportingPeriod,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w400,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                          ],
+                        ),
+                        SizedBox(height: 20),
+                        Center(
+                          child: Text(
+                            "Last Online At   :   ${_lastUpdated.isNotEmpty ? _lastUpdated : '---'}",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2,
+                              color: Colors.grey[600],
                             ),
                           ),
-                        ],
-                      )
-                    : Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: Container(
-                              height: 265,
-                              child: ListView(
-                                children: [
-                                  Column(
-                                    children: List.generate(_bills.length, (i) {
-                                      final bill = _bills[i];
-                                      final img = File(_billImagePaths[i]);
-                                      final expenseHead = bill['expenseHead'];
-                                      final expenseHeadName = expenseHead is Map
-                                          ? expenseHead['name'].toString()
-                                          : bill['expenseHeadName']
-                                                    ?.toString() ??
-                                                'N/A';
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
 
-                                      return Card(
-                                        color: Colors.grey[300],
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            15,
+                const SizedBox(height: 10),
+
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: EdgeInsets.only(left: 20, top: 5, bottom: 5),
+                    backgroundColor: Colors.blue,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text(
+                        "Uploaded Bills",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        "$_uploadedBill bills",
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () async {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => UploadedBills(),
+                            ),
+                          );
+                          final prefs = await SharedPreferences.getInstance();
+                          setState(() {
+                            _uploadedBill =
+                                prefs.getInt('uploadedBillsCount') ?? 0;
+                          });
+                        },
+                        icon: Icon(
+                          Icons.arrow_forward,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  onPressed: () async {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => UploadedBills()),
+                    );
+                    final prefs = await SharedPreferences.getInstance();
+                    setState(() {
+                      _uploadedBill = prefs.getInt('uploadedBillsCount') ?? 0;
+                    });
+                  },
+                ),
+
+                if (_bills.isEmpty)
+                  Center(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 150, bottom: 90),
+                      child: Text(
+                        "No bills added yet",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          wordSpacing: 5,
+                          letterSpacing: 4,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  uploading
+                      ? Column(
+                          children: [
+                            SizedBox(height: 70),
+                            SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: CircularProgressIndicator(
+                                color: Colors.blue,
+                                strokeWidth: 5,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Container(
+                                height: 265,
+                                child: ListView(
+                                  children: [
+                                    Column(
+                                      children: List.generate(_bills.length, (
+                                        i,
+                                      ) {
+                                        final bill = _bills[i];
+                                        final img = File(_billImagePaths[i]);
+                                        final expenseHead = bill['expenseHead'];
+                                        final expenseHeadName =
+                                            expenseHead is Map
+                                            ? expenseHead['name'].toString()
+                                            : bill['expenseHeadName']
+                                                      ?.toString() ??
+                                                  'N/A';
+
+                                        return Card(
+                                          color: Colors.grey[300],
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              15,
+                                            ),
                                           ),
-                                        ),
-                                        elevation: 5,
-                                        margin: const EdgeInsets.symmetric(
-                                          vertical: 8,
-                                          horizontal: 12,
-                                        ),
-                                        shadowColor: Colors.black26,
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(12),
-                                          child: Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 30,
-                                                ),
-                                                child: GestureDetector(
-                                                  onTap: () => Navigator.push(
-                                                    context,
-                                                    MaterialPageRoute(
-                                                      builder: (_) => BigImage(
-                                                        imageFile: img,
+                                          elevation: 5,
+                                          margin: const EdgeInsets.symmetric(
+                                            vertical: 8,
+                                            horizontal: 12,
+                                          ),
+                                          shadowColor: Colors.black26,
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 30,
+                                                      ),
+                                                  child: GestureDetector(
+                                                    onTap: () => Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            BigImage(
+                                                              imageFile: img,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                    child: ClipRRect(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            10,
+                                                          ),
+                                                      child: Image.file(
+                                                        img,
+                                                        width: 65,
+                                                        height: 65,
+                                                        fit: BoxFit.cover,
                                                       ),
                                                     ),
                                                   ),
-                                                  child: ClipRRect(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          10,
-                                                        ),
-                                                    child: Image.file(
-                                                      img,
-                                                      width: 65,
-                                                      height: 65,
-                                                      fit: BoxFit.cover,
-                                                    ),
-                                                  ),
                                                 ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      expenseHeadName,
-                                                      style: const TextStyle(
-                                                        fontSize: 16,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.black87,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      "Date: ${bill['date']}",
-                                                      style: const TextStyle(
-                                                        fontSize: 13,
-                                                        color: Colors.black54,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      "Narration: ${bill['narration']}",
-                                                      style: const TextStyle(
-                                                        fontSize: 13,
-                                                        color: Colors.black54,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Row(
-                                                      mainAxisAlignment:
-                                                          MainAxisAlignment
-                                                              .spaceBetween,
-                                                      children: [
-                                                        Text(
-                                                          "Amount: Rs ${bill['amount']}",
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 14,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                                color: Colors
-                                                                    .green,
-                                                              ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        expenseHeadName,
+                                                        style: const TextStyle(
+                                                          fontSize: 16,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: Colors.black87,
                                                         ),
-                                                        IconButton(
-                                                          onPressed: () {
-                                                            showDialog(
-                                                              context: context,
-                                                              builder:
-                                                                  (
-                                                                    BuildContext
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        "Date: ${bill['date']}",
+                                                        style: const TextStyle(
+                                                          fontSize: 13,
+                                                          color: Colors.black54,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        "Narration: ${bill['narration']}",
+                                                        style: const TextStyle(
+                                                          fontSize: 13,
+                                                          color: Colors.black54,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Row(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .spaceBetween,
+                                                        children: [
+                                                          Text(
+                                                            "Amount: Rs ${bill['amount']}",
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 14,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
+                                                                  color: Colors
+                                                                      .green,
+                                                                ),
+                                                          ),
+                                                          IconButton(
+                                                            onPressed: () {
+                                                              showDialog(
+                                                                context:
                                                                     context,
-                                                                  ) {
-                                                                    return AlertDialog(
-                                                                      title: Center(
-                                                                        child: Text(
-                                                                          "Alert!",
-                                                                          style: TextStyle(
-                                                                            fontWeight:
-                                                                                FontWeight.bold,
-                                                                            color:
-                                                                                Colors.red,
-                                                                          ),
-                                                                        ),
-                                                                      ),
-                                                                      content: Text(
-                                                                        "If you want to remove it so your bill and data will be lost. Do you wanna remove.",
-                                                                      ),
-                                                                      actions: [
-                                                                        ElevatedButton.icon(
-                                                                          style: ElevatedButton.styleFrom(
-                                                                            shape: RoundedRectangleBorder(
-                                                                              borderRadius: BorderRadius.circular(
-                                                                                5,
-                                                                              ),
-                                                                            ),
-                                                                          ),
-                                                                          onPressed: () {
-                                                                            Navigator.pop(
-                                                                              context,
-                                                                            );
-                                                                          },
-                                                                          icon: Icon(
-                                                                            Icons.exit_to_app,
-                                                                            color:
-                                                                                Colors.green,
-                                                                            fontWeight:
-                                                                                FontWeight.bold,
-                                                                          ),
-                                                                          label: Text(
-                                                                            "Cancel",
-                                                                            style: TextStyle(
-                                                                              fontWeight: FontWeight.bold,
-                                                                              color: Colors.green,
-                                                                            ),
-                                                                          ),
-                                                                        ),
-                                                                        SizedBox(
-                                                                          width:
-                                                                              10,
-                                                                        ),
-                                                                        ElevatedButton.icon(
-                                                                          style: ElevatedButton.styleFrom(
-                                                                            shape: RoundedRectangleBorder(
-                                                                              borderRadius: BorderRadius.circular(
-                                                                                5,
-                                                                              ),
-                                                                            ),
-                                                                          ),
-                                                                          onPressed: () {
-                                                                            setState(() {
-                                                                              _bills.removeAt(
-                                                                                i,
-                                                                              );
-                                                                              _billImagePaths.removeAt(
-                                                                                i,
-                                                                              );
-                                                                              Navigator.pop(
-                                                                                context,
-                                                                              );
-                                                                            });
-                                                                            _saveBills();
-                                                                          },
-                                                                          icon: Icon(
-                                                                            Icons.remove_circle,
-                                                                            fontWeight:
-                                                                                FontWeight.bold,
-                                                                            color:
-                                                                                Colors.red,
-                                                                          ),
-                                                                          label: Text(
-                                                                            "Yes",
+                                                                builder:
+                                                                    (
+                                                                      BuildContext
+                                                                      context,
+                                                                    ) {
+                                                                      return AlertDialog(
+                                                                        title: Center(
+                                                                          child: Text(
+                                                                            "Alert!",
                                                                             style: TextStyle(
                                                                               fontWeight: FontWeight.bold,
                                                                               color: Colors.red,
                                                                             ),
                                                                           ),
                                                                         ),
-                                                                      ],
-                                                                    );
-                                                                  },
-                                                            );
-                                                          },
-                                                          icon: const Icon(
-                                                            Icons
-                                                                .delete_outline,
-                                                            color: Colors
-                                                                .redAccent,
+                                                                        content:
+                                                                            Text(
+                                                                              "If you want to remove it so your bill and data will be lost. Do you wanna remove.",
+                                                                            ),
+                                                                        actions: [
+                                                                          ElevatedButton.icon(
+                                                                            style: ElevatedButton.styleFrom(
+                                                                              shape: RoundedRectangleBorder(
+                                                                                borderRadius: BorderRadius.circular(
+                                                                                  5,
+                                                                                ),
+                                                                              ),
+                                                                            ),
+                                                                            onPressed: () {
+                                                                              Navigator.pop(
+                                                                                context,
+                                                                              );
+                                                                            },
+                                                                            icon: Icon(
+                                                                              Icons.exit_to_app,
+                                                                              color: Colors.green,
+                                                                              fontWeight: FontWeight.bold,
+                                                                            ),
+                                                                            label: Text(
+                                                                              "Cancel",
+                                                                              style: TextStyle(
+                                                                                fontWeight: FontWeight.bold,
+                                                                                color: Colors.green,
+                                                                              ),
+                                                                            ),
+                                                                          ),
+                                                                          SizedBox(
+                                                                            width:
+                                                                                10,
+                                                                          ),
+                                                                          ElevatedButton.icon(
+                                                                            style: ElevatedButton.styleFrom(
+                                                                              shape: RoundedRectangleBorder(
+                                                                                borderRadius: BorderRadius.circular(
+                                                                                  5,
+                                                                                ),
+                                                                              ),
+                                                                            ),
+                                                                            onPressed: () {
+                                                                              setState(
+                                                                                () {
+                                                                                  _bills.removeAt(
+                                                                                    i,
+                                                                                  );
+                                                                                  _billImagePaths.removeAt(
+                                                                                    i,
+                                                                                  );
+                                                                                  Navigator.pop(
+                                                                                    context,
+                                                                                  );
+                                                                                },
+                                                                              );
+                                                                              _saveBills();
+                                                                            },
+                                                                            icon: Icon(
+                                                                              Icons.remove_circle,
+                                                                              fontWeight: FontWeight.bold,
+                                                                              color: Colors.red,
+                                                                            ),
+                                                                            label: Text(
+                                                                              "Yes",
+                                                                              style: TextStyle(
+                                                                                fontWeight: FontWeight.bold,
+                                                                                color: Colors.red,
+                                                                              ),
+                                                                            ),
+                                                                          ),
+                                                                        ],
+                                                                      );
+                                                                    },
+                                                              );
+                                                            },
+                                                            icon: const Icon(
+                                                              Icons
+                                                                  .delete_outline,
+                                                              color: Colors
+                                                                  .redAccent,
+                                                            ),
                                                           ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ],
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                      );
-                                    }),
-                                  ),
-                                ],
+                                        );
+                                      }),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-              const SizedBox(height: 20 * 2),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.all(20),
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          ],
                         ),
-                      ),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddBill(
-                            name: widget.name,
-                            locationCode: widget.locationCode,
+                const SizedBox(height: 20 * 2),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.all(20),
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                      ),
-                      child: const Text(
-                        "Add Bill",
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AddBill(
+                              name: widget.name,
+                              locationCode: widget.locationCode,
+                            ),
+                          ),
+                        ),
+                        child: const Text(
+                          "Add Bill",
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.all(20),
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    const SizedBox(width: 15),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.all(20),
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
-                      ),
-                      onPressed: uploading ? null : _uploadBills,
-                      child: const Text(
-                        "Upload Bills",
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
+                        onPressed: uploading ? null : _uploadBills,
+                        child: const Text(
+                          "Upload Bills",
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
