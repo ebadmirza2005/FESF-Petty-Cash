@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-// import 'package:project/Screen/login.dart';
-// import 'package:shared_preferences/shared_preferences.dart';
-
-// Text Widget
 
 class TextWidget extends StatelessWidget {
   final String text;
