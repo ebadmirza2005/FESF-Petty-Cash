@@ -550,7 +550,7 @@ class _BillScreenState extends State<BillScreen> {
                             Column(
                               children: [
                                 Text(
-                                  "Current Balances",
+                                  "Current Balance",
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w400,
