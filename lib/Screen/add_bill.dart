@@ -338,34 +338,40 @@ class _AddBillState extends State<AddBill> {
             children: [
               _loadingExpenseHeads
                   ? const Center(child: CircularProgressIndicator())
-                  : DropdownButtonFormField<int>(
-                      initialValue: _expenseHeadId,
-                      decoration: const InputDecoration(
-                        labelText: "Expense Head",
-                        labelStyle: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
-                        focusedBorder: OutlineInputBorder(),
-                        enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(width: 2, color: Colors.blue),
-                        ),
-                      ),
-                      isExpanded: true,
-                      items: _expenseHeads.map((e) {
-                        return DropdownMenuItem<int>(
-                          value: e['id'],
-                          child: Text(
-                            e['name'],
-                            overflow: TextOverflow.ellipsis,
+                  : Padding(
+                      padding: const EdgeInsets.only(top: 20),
+                      child: DropdownButtonFormField<int>(
+                        initialValue: _expenseHeadId,
+                        decoration: const InputDecoration(
+                          labelText: "Expense Head",
+                          labelStyle: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
                           ),
-                        );
-                      }).toList(),
-                      onChanged: (v) => setState(() => _expenseHeadId = v),
-                      validator: (v) =>
-                          v == null ? "Select expense head" : null,
+                          focusedBorder: OutlineInputBorder(),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              width: 2,
+                              color: Colors.blue,
+                            ),
+                          ),
+                        ),
+                        isExpanded: true,
+                        items: _expenseHeads.map((e) {
+                          return DropdownMenuItem<int>(
+                            value: e['id'],
+                            child: Text(
+                              e['name'],
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (v) => setState(() => _expenseHeadId = v),
+                        validator: (v) =>
+                            v == null ? "Select expense head" : null,
+                      ),
                     ),
-              const SizedBox(height: 15),
+              const SizedBox(height: 20),
 
               GestureDetector(
                 onTap: () {
@@ -407,7 +413,7 @@ class _AddBillState extends State<AddBill> {
                   );
                 },
                 child: Container(
-                  height: 180,
+                  height: 200,
                   width: double.infinity,
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.grey.shade400),
@@ -431,7 +437,7 @@ class _AddBillState extends State<AddBill> {
                 ),
               ),
 
-              const SizedBox(height: 15),
+              const SizedBox(height: 20),
 
               FormField<DateTime>(
                 validator: (value) =>
@@ -492,7 +498,7 @@ class _AddBillState extends State<AddBill> {
                 },
               ),
 
-              const SizedBox(height: 15),
+              const SizedBox(height: 20),
 
               TextFormField(
                 controller: _amountController,
@@ -512,7 +518,7 @@ class _AddBillState extends State<AddBill> {
                 },
               ),
 
-              const SizedBox(height: 15),
+              const SizedBox(height: 20),
 
               TextFormField(
                 controller: _narrController,
@@ -527,10 +533,10 @@ class _AddBillState extends State<AddBill> {
                 },
               ),
 
-              const SizedBox(height: 15),
-
+              const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
+                height: 50,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _submit,
                   style: ElevatedButton.styleFrom(
